@@ -1,6 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M3 6.5 12 2l9 4.5-9 4.5-9-4.5Z"/>
-  <path d="M3 6.5V17l9 4.5V11"/>
-  <path d="M21 6.5V17l-9 4.5"/>
-  <circle cx="12" cy="11" r="1.1" fill="currentColor" stroke="none"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-linejoin="round" stroke-linecap="round">
+  <!-- Self-contrasting shaded cube: bright top + mid/dark side faces read on both
+       light and dark backgrounds without relying on currentColor. -->
+  <polygon points="12,2.6 20.7,7.7 12,12.8 3.3,7.7" fill="#7fe3ff" stroke="#1c5f8f" stroke-width="0.7"/>
+  <polygon points="3.3,7.7 12,12.8 12,21.4 3.3,16.3" fill="#2f9bd6" stroke="#1c5f8f" stroke-width="0.7"/>
+  <polygon points="20.7,7.7 12,12.8 12,21.4 20.7,16.3" fill="#1f6ca6" stroke="#1c5f8f" stroke-width="0.7"/>
 </svg>
