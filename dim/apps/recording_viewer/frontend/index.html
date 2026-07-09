@@ -1,0 +1,637 @@
+<!doctype html>
+<!--
+  Recording Viewer. A 3D scene rebuilt from a RECORDED dimos "memory2" .db file:
+  drop (or browse to) a recording and it plays back in 3D — robot pose + trail
+  (odometry), lidar/costmap point clouds placed via the TF tree, planned paths,
+  and a camera PIP. A scrubbable timeline at the bottom drives the playhead.
+  The backend (main.js) opens the .db, decodes messages on demand, and streams
+  the same compact frames dim-live-viewer uses.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Recording Viewer · DimOS</title>
+<link rel="stylesheet" href="/assets/theme.css" />
+<style>
+  html, body { height: 100%; margin: 0; overflow: hidden; font-family: var(--sans); }
+  #scene { position: absolute; inset: 0;
+    background: radial-gradient(125% 95% at 50% 0%, oklch(0.99 0.002 250) 0%, oklch(0.955 0.004 250) 46%, oklch(0.9 0.006 252) 100%); }
+  body.dark #scene {
+    background: radial-gradient(120% 90% at 50% 0%, oklch(0.28 0.03 250) 0%, oklch(0.19 0.02 256) 42%, oklch(0.13 0.015 258) 100%); }
+  #scene canvas { display: block; }
+
+  .topbar { position: absolute; top: 0; left: 0; right: 0; height: 48px; z-index: 5;
+    display: flex; align-items: center; gap: 10px; padding: 0 16px;
+    border-bottom: 1px solid var(--border); background: color-mix(in oklch, var(--card) 82%, transparent);
+    backdrop-filter: blur(10px); box-shadow: var(--shadow-xs); }
+  .topbar .brand { width: 22px; height: 22px; flex: none; }
+  .topbar .title { font-size: 14px; font-weight: 650; letter-spacing: 0.02em; color: var(--fg); }
+  .topbar .sub { font-size: 11px; color: var(--muted-fg); letter-spacing: 0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
+  .topbar .spacer { flex: 1; }
+  .btn { font: inherit; font-size: 12px; font-weight: 600; color: var(--fg); cursor: pointer;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 12px; }
+  .btn:hover { background: var(--accent); }
+  .btn.primary { background: var(--primary); color: var(--primary-fg); border-color: transparent; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px;
+    color: var(--muted-fg); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+    background: color-mix(in oklch, var(--card) 60%, transparent); }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-fg); transition: background .3s; }
+  .pill.on { color: color-mix(in oklch, var(--info) 70%, var(--fg)); border-color: color-mix(in oklch, var(--info) 35%, var(--border)); }
+  .pill.on .dot { background: var(--info); box-shadow: 0 0 0 3px color-mix(in oklch, var(--info) 22%, transparent); }
+
+  .panel { position: absolute; top: 60px; left: 12px; width: 238px; z-index: 4;
+    background: color-mix(in oklch, var(--card) 90%, transparent); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-md); backdrop-filter: blur(10px);
+    padding: 12px 12px 14px; font-size: 12px; max-height: calc(100% - 150px); overflow: auto; }
+  .panel h2 { margin: 0 0 6px; font-size: 9.5px; letter-spacing: var(--track-label); text-transform: uppercase;
+    color: var(--muted-fg); font-weight: 700; }
+  .panel h2:not(:first-child) { margin-top: 15px; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 3px 2px; border-radius: var(--radius-sm); }
+  .row:hover { background: var(--accent); }
+  .row label { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; min-width: 0; }
+  .row .nm { font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .tag { display: inline-flex; align-items: center; gap: 5px; font-size: 8.5px; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--secondary-fg);
+    background: var(--secondary); border-radius: 999px; padding: 2px 7px; flex: none; }
+  .row .tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--kc, var(--muted-fg)); }
+  .kc-cloud { --kc: oklch(0.72 0.13 210); }
+  .kc-odom  { --kc: oklch(0.78 0.14 70); }
+  .kc-path  { --kc: oklch(0.78 0.18 145); }
+  .kc-image { --kc: oklch(0.68 0.15 300); }
+  .kc-tf    { --kc: oklch(0.7 0.02 260); }
+  .empty { color: var(--muted-fg); padding: 4px 2px; }
+  input[type=checkbox] { accent-color: var(--primary); }
+  select { width: 100%; appearance: none; font: inherit; font-size: 12px; color: var(--fg); cursor: pointer;
+    background: var(--card); border: 1px solid var(--input); border-radius: var(--radius); padding: 6px 9px; margin-top: 4px; }
+  .ctrl-label { color: var(--muted-fg); margin-top: 8px; font-size: 11px; }
+
+  /* recordings browser */
+  .rec { display: flex; flex-direction: column; gap: 1px; padding: 4px 6px; border-radius: var(--radius-sm); cursor: pointer; }
+  .rec:hover { background: var(--accent); }
+  .rec .rn { font-family: var(--mono); font-size: 11px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rec .rmeta { font-size: 10px; color: var(--muted-fg); }
+
+  /* start / drop overlay */
+  .overlay { position: absolute; inset: 0; z-index: 8; display: flex; align-items: center; justify-content: center;
+    padding: 24px; background: color-mix(in oklch, var(--card) 30%, transparent); backdrop-filter: blur(2px); }
+  .overlay.hidden { display: none; }
+  .drop { width: min(560px, 92%); max-height: 84%; overflow: auto; text-align: center;
+    border: 2px dashed var(--border); border-radius: var(--radius-lg); padding: 34px 28px 26px;
+    background: color-mix(in oklch, var(--card) 92%, transparent); box-shadow: var(--shadow-lg); }
+  .drop.hot { border-color: var(--primary); background: color-mix(in oklch, var(--primary) 12%, var(--card)); }
+  .drop h1 { margin: 0 0 4px; font-size: 18px; color: var(--fg); }
+  .drop p { margin: 0 0 18px; font-size: 12.5px; color: var(--muted-fg); }
+  .drop .reclist { text-align: left; margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .drop .reclist h2 { margin: 0 0 8px; font-size: 9.5px; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--muted-fg); font-weight: 700; }
+
+  /* bottom transport / timeline */
+  .transport { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 6;
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
+    background: color-mix(in oklch, var(--card) 90%, transparent); backdrop-filter: blur(10px); }
+  .transport.hidden { display: none; }
+  .transport .playbtn { width: 34px; height: 34px; flex: none; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--card); color: var(--fg); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+  .transport .playbtn:hover { background: var(--accent); }
+  .transport .clock { font-family: var(--mono); font-size: 11.5px; color: var(--muted-fg); flex: none; min-width: 96px; text-align: center; }
+  .transport input[type=range] { flex: 1; accent-color: var(--primary); height: 4px; cursor: pointer; }
+  .transport select { width: auto; margin: 0; padding: 4px 8px; font-size: 11px; }
+
+  #help { position: absolute; bottom: 68px; left: 16px; z-index: 4; color: var(--muted-fg); opacity: 0.6;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; user-select: none; }
+
+  .cam { position: absolute; top: 60px; right: 14px; z-index: 4; width: 260px;
+    border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+    background: color-mix(in oklch, var(--card) 90%, transparent); overflow: hidden; display: none; backdrop-filter: blur(10px); }
+  .cam .cam-head { font-size: 9px; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--muted-fg);
+    padding: 7px 11px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; font-weight: 700; }
+  .cam canvas { display: block; width: 100%; background: oklch(0.14 0.015 258); }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://esm.sh/three@0.160.0" } }
+</script>
+</head>
+<body class="science">
+<script>
+  (function () { const media = matchMedia("(prefers-color-scheme: light)");
+    const apply = () => document.body.classList.toggle("dark", !media.matches); apply(); media.addEventListener("change", apply) })()
+</script>
+
+<div id="scene"></div>
+
+<div class="topbar">
+  <img class="brand" src="icon.svg" alt="" />
+  <span class="title">Recording&nbsp;Viewer</span>
+  <span class="sub" id="loaded-name">· no recording</span>
+  <span class="spacer"></span>
+  <button class="btn" id="fit-top">Fit view</button>
+  <button class="btn" id="browse-top">Open…</button>
+  <span class="pill" id="pill"><span class="dot" id="dot"></span><span id="stat">idle</span></span>
+</div>
+
+<div class="panel" id="panel" style="display:none">
+  <h2>Streams</h2>
+  <div id="stream-list"><div class="empty">none yet</div></div>
+  <h2>Cloud color</h2>
+  <div class="ctrl-label">gradient</div>
+  <select id="gradient">
+    <option value="turbo">Turbo</option>
+    <option value="viridis">Viridis</option>
+    <option value="cool">Cool (blue→cyan)</option>
+    <option value="inferno">Inferno</option>
+    <option value="grayscale">Grayscale</option>
+  </select>
+  <div class="ctrl-label">gradient axis</div>
+  <select id="axis">
+    <option value="2">Z (height)</option>
+    <option value="0">X</option>
+    <option value="1">Y</option>
+  </select>
+</div>
+
+<div class="cam" id="cam">
+  <div class="cam-head" id="cam-head">Camera</div>
+  <canvas id="cam-canvas" width="320" height="180"></canvas>
+</div>
+
+<div id="help">DRAG ORBIT · SCROLL ZOOM · RIGHT-DRAG PAN</div>
+
+<div class="transport hidden" id="transport">
+  <button class="playbtn" id="playbtn" title="Play/Pause">▶</button>
+  <span class="clock" id="clock">0.0 / 0.0s</span>
+  <input type="range" id="scrub" min="0" max="1000" value="0" step="1" />
+  <select id="speed" title="Playback speed">
+    <option value="1">1×</option>
+    <option value="2">2×</option>
+    <option value="4" selected>4×</option>
+    <option value="8">8×</option>
+    <option value="16">16×</option>
+  </select>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="drop" id="drop">
+    <h1>Drop a recording here</h1>
+    <p>A dimos <code>.db</code> recording — or use the button below to browse.</p>
+    <button class="btn primary" id="browse">Browse for a .db file…</button>
+    <div class="reclist">
+      <h2>Recent recordings</h2>
+      <div id="recordings"><div class="empty">scanning…</div></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from "three"
+import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js?external=three"
+import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.0/frontend.js"
+
+// ── colormaps: t in [0,1] -> [r,g,b] (0..1) ──
+const clamp01 = (value) => Math.min(1, Math.max(0, value))
+const GRADIENTS = {
+  turbo: (t) => [clamp01(1.0 - Math.abs(2.4 * t - 1.7)), clamp01(1.0 - Math.abs(2.4 * t - 1.2)), clamp01(1.0 - Math.abs(2.4 * t - 0.4))],
+  viridis: (t) => [clamp01(0.28 + t * (0.99 - 0.28)) * (0.4 + 0.6 * t), clamp01(0.02 + t * 0.88), clamp01(0.33 + Math.sin(t * 3.14) * 0.3 - t * 0.2)],
+  cool: (t) => [0.1 + 0.1 * t, 0.4 + 0.6 * t, 1.0 - 0.2 * t],
+  inferno: (t) => [clamp01(t * 1.6), clamp01(t * t * 1.1 - 0.1), clamp01(0.3 * Math.sin(t * 3.14) + t * t * 0.3)],
+  grayscale: (t) => [0.15 + 0.85 * t, 0.15 + 0.85 * t, 0.15 + 0.85 * t],
+}
+let gradName = "turbo", axisIdx = 2
+
+// ── three.js scene (ROS convention: Z up) ──
+const host = document.getElementById("scene")
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+renderer.setClearColor(0x000000, 0)
+renderer.setPixelRatio(Math.min(2, devicePixelRatio))
+host.appendChild(renderer.domElement)
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 5000)
+camera.up.set(0, 0, 1)
+camera.position.set(6, -6, 4)
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+
+const THEME = {
+  dark:  { grid1: 0x2b3a44, grid2: 0x19242b, sky: 0xbfd8ff, ground: 0x101820 },
+  light: { grid1: 0x9aa7b2, grid2: 0xc3ccd4, sky: 0xffffff, ground: 0xb6c2ce },
+}
+const isDark = () => !matchMedia("(prefers-color-scheme: light)").matches
+let grid = null, hemi = null
+function applyTheme() {
+  const theme = isDark() ? THEME.dark : THEME.light
+  if (grid) { scene.remove(grid); grid.geometry.dispose(); grid.material.dispose() }
+  grid = new THREE.GridHelper(40, 40, theme.grid1, theme.grid2)
+  grid.rotation.x = Math.PI / 2
+  scene.add(grid)
+  if (hemi) { scene.remove(hemi) }
+  hemi = new THREE.HemisphereLight(theme.sky, theme.ground, 1.1)
+  scene.add(hemi)
+}
+applyTheme()
+const axesHelper = new THREE.AxesHelper(1.5)
+scene.add(axesHelper)
+matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => setTimeout(applyTheme, 0))
+
+function resize() {
+  const width = host.clientWidth, height = host.clientHeight
+  renderer.setSize(width, height, false); camera.aspect = width / height; camera.updateProjectionMatrix()
+}
+new ResizeObserver(resize).observe(host); resize()
+
+// ── camera framing: auto-fit the whole scene until the user orbits, then leave it ──
+let userMovedCamera = false, fitDirty = false, lastFit = 0
+controls.addEventListener("start", () => { userMovedCamera = true })
+const fitBox = new THREE.Box3(), fitTmp = new THREE.Box3(), fitVec = new THREE.Vector3()
+function sceneBounds() {
+  // Prefer the trajectory extent — it is the meaningful scene size. Cloud scans can
+  // carry long-range outliers that would otherwise blow the fit out to nothing.
+  fitBox.makeEmpty()
+  let haveTrail = false
+  odoms.forEach((odom) => {
+    if (!odom.trail.visible || !odom.count) { return }
+    const array = odom.geom.getAttribute("position").array   // world-space, bound only written verts
+    for (let i = 0; i < odom.count; i++) {
+      fitVec.set(array[i * 3], array[i * 3 + 1], array[i * 3 + 2]); fitBox.expandByPoint(fitVec); haveTrail = true
+    }
+  })
+  if (haveTrail) { return fitBox }
+  clouds.forEach((cloud) => {
+    if (!cloud.points.visible) { return }
+    cloud.geom.computeBoundingBox()
+    if (cloud.geom.boundingBox) { fitTmp.copy(cloud.geom.boundingBox).applyMatrix4(cloud.points.matrix); fitBox.union(fitTmp) }
+  })
+  return fitBox
+}
+function fitView() {
+  const box = sceneBounds()
+  if (box.isEmpty()) { return }
+  const center = box.getCenter(new THREE.Vector3())
+  const size = box.getSize(new THREE.Vector3())
+  const horizontal = Math.max(size.x, size.y, 1)
+  const distance = (horizontal * 0.5 / Math.tan((camera.fov * Math.PI / 180) / 2)) * 1.2
+  controls.target.copy(center)
+  // Look ACROSS the longer horizontal axis (not down it) so a long corridor spreads
+  // over the screen width instead of foreshortening to a line; elevate for a 3/4 view.
+  if (size.x >= size.y) {
+    camera.position.set(center.x - distance * 0.12, center.y - distance * 0.72, center.z + distance * 0.62)
+  } else {
+    camera.position.set(center.x + distance * 0.72, center.y - distance * 0.12, center.z + distance * 0.62)
+  }
+  camera.far = distance * 30; camera.near = Math.max(0.05, distance / 800); camera.updateProjectionMatrix()
+  controls.update()
+}
+document.getElementById("fit-top").addEventListener("click", () => { userMovedCamera = false; fitView() })
+
+;(function loop() {
+  requestAnimationFrame(loop)
+  if (fitDirty && !userMovedCamera) {
+    const now = performance.now()
+    if (now - lastFit > 200) { fitView(); lastFit = now; fitDirty = false }
+  }
+  controls.update(); renderer.render(scene, camera)
+})()
+
+// ── TF tree: child -> { parent, matrix(T_parent_child) } ──
+const tf = new Map()
+const tmpVector = new THREE.Vector3(), tmpQuat = new THREE.Quaternion()
+function setTf(parent, child, translation, rotation) {
+  const matrix = new THREE.Matrix4().compose(
+    tmpVector.set(translation[0], translation[1], translation[2]),
+    tmpQuat.set(rotation[0], rotation[1], rotation[2], rotation[3]),
+    { x: 1, y: 1, z: 1 })
+  tf.set(child, { parent, matrix })
+}
+function worldMatrix(frame) {
+  const chain = []
+  let current = frame, guard = 0
+  while (current && tf.has(current) && guard++ < 64) { const edge = tf.get(current); chain.push(edge.matrix); current = edge.parent }
+  const matrix = new THREE.Matrix4()
+  for (let i = chain.length - 1; i >= 0; i--) { matrix.multiply(chain[i]) }
+  return matrix
+}
+
+function b64ToBuffer(b64) {
+  const binary = atob(b64); const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i) }
+  return bytes.buffer
+}
+
+// ── point clouds ──
+const clouds = new Map()   // stream -> { points, geom, frame }
+function ensureCloud(stream) {
+  let cloud = clouds.get(stream)
+  if (cloud) { return cloud }
+  const geom = new THREE.BufferGeometry()
+  geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(0), 3))
+  geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(0), 3))
+  const material = new THREE.PointsMaterial({ size: 0.04, vertexColors: true, sizeAttenuation: true })
+  const points = new THREE.Points(geom, material)
+  points.matrixAutoUpdate = false
+  scene.add(points)
+  cloud = { points, geom, frame: "" }
+  clouds.set(stream, cloud)
+  return cloud
+}
+function recolor(cloud) {
+  const position = cloud.geom.getAttribute("position"); if (!position || !position.count) { return }
+  const color = cloud.geom.getAttribute("color")
+  const array = position.array, count = position.count
+  let low = Infinity, high = -Infinity
+  for (let i = 0; i < count; i++) { const value = array[i * 3 + axisIdx]; if (value < low) { low = value }; if (value > high) { high = value } }
+  const span = high > low ? high - low : 1
+  const gradient = GRADIENTS[gradName] || GRADIENTS.turbo
+  const colors = color.array
+  for (let i = 0; i < count; i++) {
+    const [r, g, b] = gradient((array[i * 3 + axisIdx] - low) / span)
+    colors[i * 3] = r; colors[i * 3 + 1] = g; colors[i * 3 + 2] = b
+  }
+  color.needsUpdate = true
+}
+function onCloud(payload) {
+  const cloud = ensureCloud(payload.stream)
+  cloud.frame = payload.frame
+  const xyz = new Float32Array(b64ToBuffer(payload.b64))
+  cloud.geom.setAttribute("position", new THREE.BufferAttribute(xyz, 3))
+  cloud.geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(xyz.length), 3))
+  cloud.geom.computeBoundingSphere()
+  recolor(cloud)
+  cloud.points.matrix.copy(worldMatrix(payload.frame))
+  fitDirty = true
+  addStream(payload.stream, "cloud")
+}
+
+// ── odometry / pose: body + gizmo + trail per stream ──
+// Only streams anchored to a resolvable world frame get a connecting trail. Tag /
+// detection poses (empty frame_id, discontinuous) show a marker but are never wired
+// into the trajectory line and never steer the camera. Trails are LineSegments so a
+// jump between two poses simply leaves a gap instead of a line shooting across.
+const TRAIL_COLORS = [0x45e0ff, 0xffb454, 0x7cff6b, 0xff6b9d, 0xb07cff, 0xffd93d]
+const TRAIL_CAP = 120000   // trail vertices (2 per segment)
+const TRAIL_JUMP = 2.5     // meters; a larger step is a discontinuity, not motion
+const odoms = new Map()   // stream -> { group, trail, geom, count, last }
+function ensureOdom(stream) {
+  let odom = odoms.get(stream)
+  if (odom) { return odom }
+  const color = TRAIL_COLORS[odoms.size % TRAIL_COLORS.length]
+  const group = new THREE.Group(); group.matrixAutoUpdate = false
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.28, 0.22),
+    new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.6 }))
+  body.position.z = 0.11
+  group.add(body); group.add(new THREE.AxesHelper(0.6))
+  const geom = new THREE.BufferGeometry()
+  geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * TRAIL_CAP), 3))
+  geom.setDrawRange(0, 0)
+  const trail = new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ color }))
+  scene.add(group); scene.add(trail)
+  odom = { group, trail, geom, count: 0, last: null }
+  odoms.set(stream, odom)
+  return odom
+}
+function onOdom(payload) {
+  const odom = ensureOdom(payload.stream)
+  const pose = new THREE.Matrix4().compose(
+    tmpVector.set(payload.pos[0], payload.pos[1], payload.pos[2]),
+    tmpQuat.set(payload.quat[0], payload.quat[1], payload.quat[2], payload.quat[3]), { x: 1, y: 1, z: 1 })
+  const world = worldMatrix(payload.frame).multiply(pose)
+  odom.group.matrix.copy(world)
+  const worldPosition = new THREE.Vector3().setFromMatrixPosition(world)
+  const anchored = payload.frame !== ""
+  const step = odom.last ? odom.last.distanceTo(worldPosition) : Infinity
+  if (anchored && odom.last && step <= TRAIL_JUMP && odom.count + 2 <= TRAIL_CAP) {
+    const array = odom.geom.getAttribute("position").array
+    const base = odom.count * 3
+    array[base] = odom.last.x; array[base + 1] = odom.last.y; array[base + 2] = odom.last.z
+    array[base + 3] = worldPosition.x; array[base + 4] = worldPosition.y; array[base + 5] = worldPosition.z
+    odom.count += 2
+    odom.geom.getAttribute("position").needsUpdate = true
+    odom.geom.setDrawRange(0, odom.count)
+    fitDirty = true
+  }
+  odom.last = worldPosition
+  addStream(payload.stream, "odom", anchored)
+}
+
+// ── planned path per stream ──
+const paths = new Map()   // stream -> { line, geom }
+function ensurePath(stream) {
+  let path = paths.get(stream)
+  if (path) { return path }
+  const geom = new THREE.BufferGeometry()
+  geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * 8000), 3))
+  geom.setDrawRange(0, 0)
+  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0x7CFF6B }))
+  line.matrixAutoUpdate = false
+  scene.add(line)
+  path = { line, geom }
+  paths.set(stream, path)
+  return path
+}
+function onPath(payload) {
+  const path = ensurePath(payload.stream)
+  const xyz = new Float32Array(b64ToBuffer(payload.b64))
+  const capacity = path.geom.getAttribute("position")
+  if (xyz.length > capacity.array.length) {
+    path.geom.setAttribute("position", new THREE.BufferAttribute(xyz.slice(), 3))
+  } else {
+    capacity.array.set(xyz); capacity.needsUpdate = true
+  }
+  path.geom.setDrawRange(0, xyz.length / 3)
+  path.line.matrix.copy(worldMatrix(payload.frame))
+  addStream(payload.stream, "path")
+}
+
+// ── camera PIP ──
+const camBox = document.getElementById("cam"), camHead = document.getElementById("cam-head")
+const camCanvas = document.getElementById("cam-canvas"), camCtx = camCanvas.getContext("2d")
+let camRaw = null
+function onFrame(payload) {
+  camBox.style.display = "block"
+  camHead.textContent = payload.stream.split("#")[0]
+  addStream(payload.stream, "image")
+  if (payload.kind === "compressed") {
+    const image = new Image()
+    image.onload = () => {
+      if (camCanvas.width !== image.width || camCanvas.height !== image.height) { camCanvas.width = image.width; camCanvas.height = image.height }
+      camCtx.drawImage(image, 0, 0)
+    }
+    image.src = `data:image/${(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"};base64,${payload.b64}`
+    return
+  }
+  const width = payload.width, height = payload.height; if (!width || !height) { return }
+  const source = new Uint8Array(b64ToBuffer(payload.b64))
+  const encoding = (payload.encoding || "rgb8").toLowerCase()
+  const channels = encoding === "rgba8" ? 4 : encoding === "mono8" ? 1 : 3
+  const step = payload.step || width * channels
+  if (camCanvas.width !== width || camCanvas.height !== height) { camCanvas.width = width; camCanvas.height = height; camRaw = null }
+  if (!camRaw) { camRaw = camCtx.createImageData(width, height) }
+  const destination = camRaw.data
+  const isBgr = encoding === "bgr8" || encoding === "bgra8"
+  for (let y = 0; y < height; y++) {
+    let sourceIndex = y * step, destIndex = y * width * 4
+    for (let x = 0; x < width; x++) {
+      if (channels === 1) { const value = source[sourceIndex]; destination[destIndex] = value; destination[destIndex + 1] = value; destination[destIndex + 2] = value; destination[destIndex + 3] = 255; sourceIndex += 1 }
+      else {
+        const r = source[sourceIndex + (isBgr ? 2 : 0)], g = source[sourceIndex + 1], b = source[sourceIndex + (isBgr ? 0 : 2)]
+        destination[destIndex] = r; destination[destIndex + 1] = g; destination[destIndex + 2] = b; destination[destIndex + 3] = 255; sourceIndex += channels
+      }
+      destIndex += 4
+    }
+  }
+  camCtx.putImageData(camRaw, 0, 0)
+}
+
+// ── clear scene state (on load / seek reset) ──
+function clearScene() {
+  for (const cloud of clouds.values()) { scene.remove(cloud.points); cloud.geom.dispose(); cloud.points.material.dispose() }
+  clouds.clear()
+  for (const odom of odoms.values()) { scene.remove(odom.group); scene.remove(odom.trail); odom.geom.dispose() }
+  odoms.clear()
+  for (const path of paths.values()) { scene.remove(path.line); path.geom.dispose() }
+  paths.clear()
+  tf.clear()
+}
+
+// ── stream checklist ──
+const known = new Map()   // name -> { kind, on }
+function setVisible(name, on) {
+  const cloud = clouds.get(name); if (cloud) { cloud.points.visible = on }
+  const odom = odoms.get(name); if (odom) { odom.group.visible = on; odom.trail.visible = on }
+  const path = paths.get(name); if (path) { path.line.visible = on }
+}
+function refreshStreams() {
+  const list = document.getElementById("stream-list")
+  if (!known.size) { list.innerHTML = '<div class="empty">none yet</div>'; return }
+  const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, entry]) =>
+    `<div class="row"><label><input type="checkbox" data-s="${encodeURIComponent(name)}" ${entry.on ? "checked" : ""}>` +
+    `<span class="nm">${name.split("#")[0].replace(/[&<>]/g, "")}</span></label><span class="tag kc-${entry.kind}">${entry.kind}</span></div>`).join("")
+  if (list.dataset.sig !== rows) { list.dataset.sig = rows; list.innerHTML = rows }
+}
+document.getElementById("stream-list").addEventListener("change", (event) => {
+  const checkbox = event.target.closest("input[data-s]"); if (!checkbox) { return }
+  const name = decodeURIComponent(checkbox.dataset.s)
+  const entry = known.get(name); if (entry) { entry.on = checkbox.checked; setVisible(name, checkbox.checked) }
+})
+function addStream(name, kind, defaultOn = true) {
+  const current = known.get(name)
+  if (!current) { known.set(name, { kind: kind || "…", on: defaultOn }); refreshStreams() }
+  else if (kind && current.kind !== kind) { current.kind = kind; refreshStreams() }
+  if (known.get(name)?.on === false) { setVisible(name, false) }
+}
+
+// ── cloud color controls ──
+document.getElementById("gradient").addEventListener("change", (event) => { gradName = event.target.value; clouds.forEach(recolor) })
+document.getElementById("axis").addEventListener("change", (event) => { axisIdx = +event.target.value; clouds.forEach(recolor) })
+
+// ── transport / timeline ──
+const overlay = document.getElementById("overlay")
+const transport = document.getElementById("transport")
+const panel = document.getElementById("panel")
+const playBtn = document.getElementById("playbtn")
+const scrub = document.getElementById("scrub")
+const clock = document.getElementById("clock")
+const speedSelect = document.getElementById("speed")
+const loadedName = document.getElementById("loaded-name")
+const pill = document.getElementById("pill"), statEl = document.getElementById("stat")
+
+let timeline = { t0: 0, t1: 0, t: 0, playing: false }
+let scrubbing = false
+
+function formatClock() {
+  const elapsed = Math.max(0, timeline.t - timeline.t0)
+  const duration = Math.max(0, timeline.t1 - timeline.t0)
+  clock.textContent = `${elapsed.toFixed(1)} / ${duration.toFixed(1)}s`
+}
+function renderTransport() {
+  playBtn.textContent = timeline.playing ? "❚❚" : "▶"
+  if (!scrubbing) {
+    const duration = timeline.t1 - timeline.t0
+    scrub.value = duration > 0 ? String(Math.round(((timeline.t - timeline.t0) / duration) * 1000)) : "0"
+  }
+  formatClock()
+}
+playBtn.addEventListener("click", () => { app.send(timeline.playing ? "pause" : "play") })
+speedSelect.addEventListener("change", () => { app.send("speed", { speed: Number(speedSelect.value) }) })
+scrub.addEventListener("input", () => { scrubbing = true; const duration = timeline.t1 - timeline.t0; timeline.t = timeline.t0 + (Number(scrub.value) / 1000) * duration; formatClock() })
+scrub.addEventListener("change", () => { const duration = timeline.t1 - timeline.t0; const target = timeline.t0 + (Number(scrub.value) / 1000) * duration; scrubbing = false; app.send("seek", { t: target }) })
+
+// ── recordings browser + open ──
+function fmtSize(bytes) {
+  if (!bytes) { return "" }
+  const units = ["B", "KB", "MB", "GB"]; let value = bytes, unit = 0
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++ }
+  return `${value.toFixed(value < 10 && unit > 0 ? 1 : 0)}${units[unit]}`
+}
+function renderRecordings(recordings) {
+  const container = document.getElementById("recordings")
+  if (!recordings || !recordings.length) { container.innerHTML = '<div class="empty">no .db recordings found in known folders</div>'; return }
+  container.innerHTML = recordings.slice(0, 40).map((record) =>
+    `<div class="rec" data-path="${encodeURIComponent(record.path)}">` +
+    `<span class="rn">${(record.label || record.name).replace(/[&<>]/g, "")}</span>` +
+    `<span class="rmeta">${fmtSize(record.size)}</span></div>`).join("")
+}
+document.getElementById("recordings").addEventListener("click", (event) => {
+  const item = event.target.closest(".rec[data-path]"); if (!item) { return }
+  open(decodeURIComponent(item.dataset.path))
+})
+function open(path) {
+  setStatus("loading")
+  app.send("open", { path })
+}
+document.getElementById("browse").addEventListener("click", () => { setStatus("loading"); app.send("pickFile") })
+document.getElementById("browse-top").addEventListener("click", () => { setStatus("loading"); app.send("pickFile") })
+
+// ── drag & drop (name-resolved by the backend) ──
+const dropZone = document.getElementById("drop")
+window.addEventListener("dragover", (event) => { event.preventDefault() })
+window.addEventListener("dragenter", (event) => { event.preventDefault(); overlay.classList.remove("hidden"); dropZone.classList.add("hot") })
+window.addEventListener("dragleave", (event) => { if (event.relatedTarget === null) { dropZone.classList.remove("hot") } })
+window.addEventListener("drop", (event) => {
+  event.preventDefault(); dropZone.classList.remove("hot")
+  const file = event.dataTransfer?.files?.[0]; if (!file) { return }
+  setStatus("loading")
+  // Path is stripped from dropped files, so hand the backend the name and let it
+  // resolve against the known recording folders (falls back to a picker on miss).
+  app.send("open", { name: file.name })
+})
+
+// ── status pill ──
+function setStatus(state, detail) {
+  if (state === "loading") { pill.classList.remove("on"); statEl.textContent = detail || "loading…" }
+  else if (state === "playing") { pill.classList.add("on"); statEl.textContent = `playing · ${known.size} streams` }
+  else if (state === "ready") { pill.classList.add("on"); statEl.textContent = `${known.size} streams` }
+  else if (state === "error") { pill.classList.remove("on"); statEl.textContent = detail || "error" }
+  else { pill.classList.remove("on"); statEl.textContent = "idle" }
+}
+
+// ── app bus ──
+const app = new DimAppFrontend()
+app.receiveRequest((kind, payload) => {
+  if (kind === "recordings") { renderRecordings(payload.recordings) }
+  else if (kind === "loading") { setStatus("loading", "opening " + (payload.name || "")) }
+  else if (kind === "loaded") {
+    clearScene(); known.clear(); refreshStreams()
+    userMovedCamera = false; fitDirty = true
+    loadedName.textContent = "· " + (payload.name || payload.path || "")
+    timeline = { t0: payload.t0, t1: payload.t1, t: payload.t0, playing: true }
+    overlay.classList.add("hidden"); transport.classList.remove("hidden"); panel.style.display = "block"
+    renderTransport(); setStatus("ready")
+  }
+  else if (kind === "reset") { clearScene(); known.clear(); refreshStreams() }
+  else if (kind === "time") {
+    timeline.t0 = payload.t0; timeline.t1 = payload.t1; timeline.t = payload.t; timeline.playing = payload.playing
+    renderTransport(); setStatus(payload.playing ? "playing" : "ready")
+  }
+  else if (kind === "cloud") { onCloud(payload) }
+  else if (kind === "odom") { onOdom(payload) }
+  else if (kind === "tf") { for (const transform of payload.transforms || []) { setTf(transform.parent, transform.child, transform.t, transform.q) } }
+  else if (kind === "path") { onPath(payload) }
+  else if (kind === "frame") { onFrame(payload) }
+  else if (kind === "error") { setStatus("error", payload.message); overlay.classList.remove("hidden") }
+  else if (kind === "pickCancelled") { setStatus(known.size ? "ready" : "idle") }
+})
+app.send("hello")
+setStatus("idle")
+</script>
+</body>
+</html>
