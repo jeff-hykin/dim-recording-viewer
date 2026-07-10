@@ -40,7 +40,7 @@
   .pill.on { color: color-mix(in oklch, var(--info) 70%, var(--fg)); border-color: color-mix(in oklch, var(--info) 35%, var(--border)); }
   .pill.on .dot { background: var(--info); box-shadow: 0 0 0 3px color-mix(in oklch, var(--info) 22%, transparent); }
 
-  .panel { position: absolute; top: 60px; left: 12px; width: 238px; z-index: 4;
+  .panel { position: absolute; top: 60px; left: 12px; width: 288px; z-index: 4;
     background: color-mix(in oklch, var(--card) 90%, transparent); border: 1px solid var(--border);
     border-radius: var(--radius-lg); box-shadow: var(--shadow-md); backdrop-filter: blur(10px);
     padding: 12px 12px 14px; font-size: 12px; max-height: calc(100% - 150px); overflow: auto; }
@@ -65,7 +65,7 @@
   select { width: 100%; appearance: none; font: inherit; font-size: 12px; color: var(--fg); cursor: pointer;
     background: var(--card); border: 1px solid var(--input); border-radius: var(--radius); padding: 6px 9px; margin-top: 4px; }
   .row select.grad-pick { width: 78px; flex: none; font-size: 10px; padding: 2px 5px; margin: 0; }
-  .ctrl-label { color: var(--muted-fg); margin-top: 8px; font-size: 11px; }
+  .row select.axis-pick { width: 38px; }
 
   /* recordings browser */
   .rec { display: flex; flex-direction: column; gap: 1px; padding: 4px 6px; border-radius: var(--radius-sm); cursor: pointer; }
@@ -134,13 +134,6 @@
 <div class="panel" id="panel" style="display:none">
   <h2>Streams</h2>
   <div id="stream-list"><div class="empty">none yet</div></div>
-  <h2>Cloud color</h2>
-  <div class="ctrl-label">gradient axis</div>
-  <select id="axis">
-    <option value="2">Z (height)</option>
-    <option value="0">X</option>
-    <option value="1">Y</option>
-  </select>
 </div>
 
 <div class="cam" id="cam">
@@ -188,7 +181,7 @@ const GRADIENTS = {
   inferno: (t) => [clamp01(t * 1.6), clamp01(t * t * 1.1 - 0.1), clamp01(0.3 * Math.sin(t * 3.14) + t * t * 0.3)],
   grayscale: (t) => [0.15 + 0.85 * t, 0.15 + 0.85 * t, 0.15 + 0.85 * t],
 }
-let gradName = "turbo", axisIdx = 2
+let gradName = "turbo"
 const GRAD_NAMES = Object.keys(GRADIENTS)
 // Each new cloud stream starts on a different gradient so overlapping clouds are
 // easy to tell apart at a glance.
@@ -433,10 +426,12 @@ function recolor(cloud) {
   const position = cloud.geom.getAttribute("position"); if (!position || !position.count) { return }
   const color = cloud.geom.getAttribute("color")
   const array = position.array, count = position.count
+  const entry = known.get(cloud.stream)
+  const axisIdx = entry?.axis ?? 2
   let low = Infinity, high = -Infinity
   for (let i = 0; i < count; i++) { const value = array[i * 3 + axisIdx]; if (value < low) { low = value }; if (value > high) { high = value } }
   const span = high > low ? high - low : 1
-  const gradient = GRADIENTS[known.get(cloud.stream)?.grad || gradName] || GRADIENTS.turbo
+  const gradient = GRADIENTS[entry?.grad || gradName] || GRADIENTS.turbo
   const colors = color.array
   for (let i = 0; i < count; i++) {
     const [r, g, b] = gradient((array[i * 3 + axisIdx] - low) / span)
@@ -600,10 +595,13 @@ function refreshStreams() {
   const list = document.getElementById("stream-list")
   if (!known.size) { list.innerHTML = '<div class="empty">none yet</div>'; return }
   const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, entry]) => {
-    // Cloud streams get their own gradient picker; everything else shows a kind tag.
+    // Cloud streams get their own gradient + gradient-axis pickers; everything else shows a kind tag.
+    const axis = entry.axis ?? 2
     const control = entry.kind === "cloud"
       ? `<select class="grad-pick" data-g="${encodeURIComponent(name)}">` +
-        GRAD_NAMES.map((gradient) => `<option value="${gradient}" ${gradient === entry.grad ? "selected" : ""}>${gradient}</option>`).join("") + `</select>`
+        GRAD_NAMES.map((gradient) => `<option value="${gradient}" ${gradient === entry.grad ? "selected" : ""}>${gradient}</option>`).join("") + `</select>` +
+        `<select class="grad-pick axis-pick" data-a="${encodeURIComponent(name)}">` +
+        [["2", "z"], ["0", "x"], ["1", "y"]].map(([value, label]) => `<option value="${value}" ${+value === axis ? "selected" : ""}>${label}</option>`).join("") + `</select>`
       : `<span class="tag kc-${entry.kind}">${entry.kind}</span>`
     return `<div class="row"><label><input type="checkbox" data-s="${encodeURIComponent(name)}" ${entry.on ? "checked" : ""}>` +
       `<span class="nm">${name.split("#")[0].replace(/[&<>]/g, "")}</span></label>${control}</div>`
@@ -612,10 +610,15 @@ function refreshStreams() {
 }
 document.getElementById("stream-list").addEventListener("change", (event) => {
   const gradPick = event.target.closest("select[data-g]")
-  if (gradPick) {
-    const name = decodeURIComponent(gradPick.dataset.g)
+  const axisPick = event.target.closest("select[data-a]")
+  if (gradPick || axisPick) {
+    const name = decodeURIComponent(gradPick ? gradPick.dataset.g : axisPick.dataset.a)
     const entry = known.get(name)
-    if (entry) { entry.grad = gradPick.value; const cloud = clouds.get(name); if (cloud) { recolor(cloud) }; refreshStreams() }
+    if (entry) {
+      if (gradPick) { entry.grad = gradPick.value } else { entry.axis = +axisPick.value }
+      const cloud = clouds.get(name); if (cloud) { recolor(cloud) }
+      refreshStreams()
+    }
     return
   }
   const checkbox = event.target.closest("input[data-s]"); if (!checkbox) { return }
@@ -636,8 +639,6 @@ function addStream(name, kind, defaultOn = true) {
   if (known.get(name)?.on === false) { setVisible(name, false) }
 }
 
-// ── cloud color controls (each cloud stream has its own gradient picker) ──
-document.getElementById("axis").addEventListener("change", (event) => { axisIdx = +event.target.value; clouds.forEach(recolor) })
 
 // ── transport / timeline ──
 const overlay = document.getElementById("overlay")
