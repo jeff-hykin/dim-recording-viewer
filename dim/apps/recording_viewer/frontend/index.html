@@ -135,14 +135,6 @@
   <h2>Streams</h2>
   <div id="stream-list"><div class="empty">none yet</div></div>
   <h2>Cloud color</h2>
-  <div class="ctrl-label">all clouds (each stream has its own picker above)</div>
-  <select id="gradient">
-    <option value="turbo">Turbo</option>
-    <option value="viridis">Viridis</option>
-    <option value="cool">Cool (blue→cyan)</option>
-    <option value="inferno">Inferno</option>
-    <option value="grayscale">Grayscale</option>
-  </select>
   <div class="ctrl-label">gradient axis</div>
   <select id="axis">
     <option value="2">Z (height)</option>
@@ -644,12 +636,7 @@ function addStream(name, kind, defaultOn = true) {
   if (known.get(name)?.on === false) { setVisible(name, false) }
 }
 
-// ── cloud color controls (global gradient resets every stream's picker) ──
-document.getElementById("gradient").addEventListener("change", (event) => {
-  gradName = event.target.value
-  for (const entry of known.values()) { if (entry.grad) { entry.grad = gradName } }
-  clouds.forEach(recolor); refreshStreams()
-})
+// ── cloud color controls (each cloud stream has its own gradient picker) ──
 document.getElementById("axis").addEventListener("change", (event) => { axisIdx = +event.target.value; clouds.forEach(recolor) })
 
 // ── transport / timeline ──
@@ -665,6 +652,19 @@ const pill = document.getElementById("pill"), statEl = document.getElementById("
 
 let timeline = { t0: 0, t1: 0, t: 0, playing: false }
 let scrubbing = false
+// Live scrubbing: fire a seek while the user drags, but only one at a time. The
+// backend replays to the target and answers with a "time" message; that ack
+// releases the next pending seek, so a fast drag coalesces to the latest target
+// instead of flooding the bus.
+let seekInFlight = false
+let pendingSeek = null
+function flushSeek() {
+  if (pendingSeek === null) { return }
+  const target = pendingSeek
+  pendingSeek = null
+  seekInFlight = true
+  app.send("seek", { t: target })
+}
 
 function formatClock() {
   const elapsed = Math.max(0, timeline.t - timeline.t0)
@@ -681,8 +681,21 @@ function renderTransport() {
 }
 playBtn.addEventListener("click", () => { app.send(timeline.playing ? "pause" : "play") })
 speedSelect.addEventListener("change", () => { app.send("speed", { speed: Number(speedSelect.value) }) })
-scrub.addEventListener("input", () => { scrubbing = true; const duration = timeline.t1 - timeline.t0; timeline.t = timeline.t0 + (Number(scrub.value) / 1000) * duration; formatClock() })
-scrub.addEventListener("change", () => { const duration = timeline.t1 - timeline.t0; const target = timeline.t0 + (Number(scrub.value) / 1000) * duration; scrubbing = false; app.send("seek", { t: target }) })
+scrub.addEventListener("input", () => {
+  scrubbing = true
+  const duration = timeline.t1 - timeline.t0
+  const target = timeline.t0 + (Number(scrub.value) / 1000) * duration
+  timeline.t = target; formatClock()
+  pendingSeek = target
+  if (!seekInFlight) { flushSeek() }
+})
+scrub.addEventListener("change", () => {
+  const duration = timeline.t1 - timeline.t0
+  const target = timeline.t0 + (Number(scrub.value) / 1000) * duration
+  scrubbing = false
+  pendingSeek = target
+  if (!seekInFlight) { flushSeek() }
+})
 
 // ── recordings browser + open ──
 function fmtSize(bytes) {
@@ -750,6 +763,7 @@ app.receiveRequest((kind, payload) => {
   else if (kind === "time") {
     timeline.t0 = payload.t0; timeline.t1 = payload.t1; timeline.t = payload.t; timeline.playing = payload.playing
     renderTransport(); setStatus(payload.playing ? "playing" : "ready")
+    if (seekInFlight) { seekInFlight = false; flushSeek() }
   }
   else if (kind === "cloud") { onCloud(payload) }
   else if (kind === "odom") { onOdom(payload) }
