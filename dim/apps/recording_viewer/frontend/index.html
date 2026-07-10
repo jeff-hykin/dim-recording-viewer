@@ -47,7 +47,14 @@
   .panel h2 { margin: 0 0 6px; font-size: 9.5px; letter-spacing: var(--track-label); text-transform: uppercase;
     color: var(--muted-fg); font-weight: 700; }
   .panel h2:not(:first-child) { margin-top: 15px; }
-  .row { display: flex; align-items: center; gap: 8px; padding: 3px 2px; border-radius: var(--radius-sm); }
+  .panel h2.toggle { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
+  .panel h2.toggle::before { content: "▾"; font-size: 8px; transition: transform 0.15s; }
+  .panel.collapsed { width: auto; padding: 8px 12px; overflow: visible; }
+  .panel.collapsed h2 { margin: 0; }
+  .panel.collapsed h2.toggle::before { transform: rotate(-90deg); }
+  .panel.collapsed #stream-list { display: none; }
+  .row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 3px 2px; border-radius: var(--radius-sm); }
+  .row select.accum-pick { width: 64px; }
   .row:hover { background: var(--accent); }
   .row label { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; min-width: 0; }
   .row .nm { font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -108,6 +115,36 @@
   .cam .cam-head { font-size: 9px; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--muted-fg);
     padding: 7px 11px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; font-weight: 700; }
   .cam canvas { display: block; width: 100%; background: oklch(0.14 0.015 258); }
+
+  #ctxmenu { position: absolute; z-index: 9; min-width: 156px; display: none; padding: 4px;
+    background: color-mix(in oklch, var(--card) 96%, transparent); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); }
+  #ctxmenu button { display: block; width: 100%; text-align: left; font: inherit; font-size: 12px;
+    color: var(--fg); background: none; border: none; border-radius: var(--radius-sm); padding: 6px 10px; cursor: pointer; }
+  #ctxmenu button:hover { background: color-mix(in oklch, var(--primary) 16%, transparent); }
+  #marker-coords { position: absolute; bottom: 68px; right: 16px; z-index: 4; display: none;
+    font-family: var(--mono); font-size: 11px; color: var(--fg); letter-spacing: 0.04em; padding: 7px 11px;
+    background: color-mix(in oklch, var(--card) 88%, transparent); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-md); backdrop-filter: blur(10px); }
+  #marker-coords .mc-label { display: block; margin-bottom: 3px; color: var(--muted-fg); font-size: 9px;
+    text-transform: uppercase; letter-spacing: var(--track-label); }
+  .row .cust-btn { font: inherit; font-size: 8.5px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--secondary-fg); background: var(--secondary); border: none;
+    border-radius: 999px; padding: 3px 9px; cursor: pointer; flex: none; display: inline-flex; align-items: center; gap: 5px; }
+  .row .cust-btn::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: oklch(0.72 0.13 210); }
+  .row .cust-btn .cb-hover { display: none; }
+  .row .cust-btn:hover .cb-idle { display: none; }
+  .row .cust-btn:hover .cb-hover { display: inline; }
+  #cust-panel { position: absolute; z-index: 9; display: none; padding: 9px; min-width: 158px;
+    background: color-mix(in oklch, var(--card) 96%, transparent); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); }
+  #cust-panel .cp-title { display: block; margin-bottom: 6px; color: var(--muted-fg); font-size: 9px;
+    text-transform: uppercase; letter-spacing: var(--track-label); font-family: var(--mono);
+    max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #cust-panel .cp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 3px 1px; font-size: 11px; color: var(--fg); }
+  #cust-panel .cp-row > span { color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.05em; font-size: 9px; }
+  #cust-panel input[type=color] { width: 42px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
+  #cust-panel select { font: inherit; font-size: 11px; padding: 2px 4px; }
 </style>
 <script type="importmap">
 { "imports": { "three": "https://esm.sh/three@0.160.0" } }
@@ -132,7 +169,7 @@
 </div>
 
 <div class="panel" id="panel" style="display:none">
-  <h2>Streams</h2>
+  <h2 class="toggle" id="streams-toggle" title="Click to collapse/expand">Streams</h2>
   <div id="stream-list"><div class="empty">none yet</div></div>
 </div>
 
@@ -141,7 +178,19 @@
   <canvas id="cam-canvas" width="320" height="180"></canvas>
 </div>
 
-<div id="help">WASD MOVE · Q/E DOWN/UP · DRAG LOOK · SCROLL DOLLY · RIGHT-DRAG PAN · DBLCLICK RECENTER<span id="campos"></span></div>
+<div id="help">WASD MOVE · Q/E DOWN/UP · DRAG LOOK · SCROLL DOLLY · RIGHT-DRAG PAN · RIGHT-CLICK MARKER · DBLCLICK RECENTER<span id="campos"></span></div>
+
+<div id="ctxmenu">
+  <button id="ctx-place">Place marker here</button>
+  <button id="ctx-clear">Clear markers</button>
+</div>
+<div id="marker-coords"><span class="mc-label">Marker · floor (m)</span><span id="marker-coords-val"></span></div>
+<div id="cust-panel">
+  <span class="cp-title" id="cp-title"></span>
+  <div class="cp-row"><span>Start</span><input type="color" id="cp-start"></div>
+  <div class="cp-row"><span>End</span><input type="color" id="cp-end"></div>
+  <div class="cp-row"><span>Axis</span><select id="cp-axis"><option value="2">z</option><option value="0">x</option><option value="1">y</option></select></div>
+</div>
 
 <div class="transport hidden" id="transport">
   <button class="playbtn" id="playbtn" title="Play/Pause">▶</button>
@@ -172,22 +221,27 @@
 import * as THREE from "three"
 import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.0/frontend.js"
 
-// ── colormaps: t in [0,1] -> [r,g,b] (0..1) ──
+// ── cloud coloring: a start→end color gradient mapped along one axis ──
 const clamp01 = (value) => Math.min(1, Math.max(0, value))
-const GRADIENTS = {
-  turbo: (t) => [clamp01(1.0 - Math.abs(2.4 * t - 1.7)), clamp01(1.0 - Math.abs(2.4 * t - 1.2)), clamp01(1.0 - Math.abs(2.4 * t - 0.4))],
-  viridis: (t) => [clamp01(0.28 + t * (0.99 - 0.28)) * (0.4 + 0.6 * t), clamp01(0.02 + t * 0.88), clamp01(0.33 + Math.sin(t * 3.14) * 0.3 - t * 0.2)],
-  cool: (t) => [0.1 + 0.1 * t, 0.4 + 0.6 * t, 1.0 - 0.2 * t],
-  inferno: (t) => [clamp01(t * 1.6), clamp01(t * t * 1.1 - 0.1), clamp01(0.3 * Math.sin(t * 3.14) + t * t * 0.3)],
-  grayscale: (t) => [0.15 + 0.85 * t, 0.15 + 0.85 * t, 0.15 + 0.85 * t],
+function hexToRgb01(hex) {
+  const value = parseInt(String(hex || "#ffffff").slice(1), 16)
+  return [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255]
 }
-let gradName = "turbo"
-const GRAD_NAMES = Object.keys(GRADIENTS)
-// Each new cloud stream starts on a different gradient so overlapping clouds are
-// easy to tell apart at a glance.
+// Each new cloud stream cycles through a default start/end pair so overlapping
+// clouds are easy to tell apart at a glance; the user can customize per-stream.
+const GRAD_PAIRS = [
+  ["#1130ff", "#ff2a12"],
+  ["#3b0f9e", "#f2f21a"],
+  ["#0b3f8f", "#7ffcff"],
+  ["#101010", "#ff9a00"],
+  ["#2a2a2a", "#ffffff"],
+]
+// Per-stream accumulation: "latest" (one frame), "all" (built-up map/path), or a
+// time window in seconds. Sent to the backend so seeks rebuild the same set.
+const ACCUM_OPTIONS = [["latest", "latest"], ["all", "accum"], ["2", "2s"], ["5", "5s"], ["10", "10s"], ["30", "30s"]]
 function nextDefaultGradient() {
-  const used = [...known.values()].filter((entry) => entry.grad).length
-  return GRAD_NAMES[used % GRAD_NAMES.length]
+  const used = [...known.values()].filter((entry) => entry.gradStart).length
+  return GRAD_PAIRS[used % GRAD_PAIRS.length]
 }
 
 // ── three.js scene (ROS convention: Z up) ──
@@ -227,8 +281,10 @@ window.addEventListener("keydown", (event) => {
 window.addEventListener("keyup", (event) => heldKeys.delete(event.code))
 window.addEventListener("blur", () => heldKeys.clear())
 let dragButton = -1   // 0 = look, 2 = pan
+let rightDragDist = 0   // right-button travel; a real pan suppresses the marker menu
 renderer.domElement.addEventListener("pointerdown", (event) => {
   dragButton = event.button; userMovedCamera = true
+  if (event.button === 2) { rightDragDist = 0 }
   renderer.domElement.setPointerCapture(event.pointerId)
 })
 renderer.domElement.addEventListener("pointerup", () => { dragButton = -1 })
@@ -241,6 +297,7 @@ renderer.domElement.addEventListener("pointermove", (event) => {
     look.yaw += event.movementX * 0.004
     look.pitch = THREE.MathUtils.clamp(look.pitch + event.movementY * 0.004, -1.4, 1.4)
   } else if (dragButton === 2) {
+    rightDragDist += Math.abs(event.movementX) + Math.abs(event.movementY)
     const forward = viewDir()
     const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize()
     const screenUp = new THREE.Vector3().crossVectors(right, forward)
@@ -248,7 +305,14 @@ renderer.domElement.addEventListener("pointermove", (event) => {
     camera.position.addScaledVector(screenUp, event.movementY * 0.015)
   }
 })
-renderer.domElement.addEventListener("contextmenu", (event) => event.preventDefault())
+// A plain right-click (no pan drag) opens the marker menu at the cursor.
+renderer.domElement.addEventListener("contextmenu", (event) => {
+  event.preventDefault()
+  if (rightDragDist > 6) { return }
+  ctxClientX = event.clientX; ctxClientY = event.clientY
+  ctxMenu.style.left = event.clientX + "px"; ctxMenu.style.top = event.clientY + "px"
+  ctxMenu.style.display = "block"
+})
 // Scroll = fly forward/back along the view direction. Per-event clamp keeps
 // trackpad momentum flings from teleporting the camera.
 renderer.domElement.addEventListener("wheel", (event) => {
@@ -256,6 +320,99 @@ renderer.domElement.addEventListener("wheel", (event) => {
   camera.position.addScaledVector(viewDir(), THREE.MathUtils.clamp(-event.deltaY * 0.01, -1, 1))
 }, { passive: true })
 renderer.domElement.addEventListener("dblclick", () => { userMovedCamera = false; fitView() })
+
+// ── floor markers: right-click drops a pin where the cursor ray meets the ground ──
+const raycaster = new THREE.Raycaster()
+const floorPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)   // z = 0 ground
+const markerGroup = new THREE.Group()
+scene.add(markerGroup)
+const ctxMenu = document.getElementById("ctxmenu")
+const markerCoordsBox = document.getElementById("marker-coords")
+const markerCoordsVal = document.getElementById("marker-coords-val")
+let ctxClientX = 0, ctxClientY = 0
+function floorPointFromScreen(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect()
+  const ndc = new THREE.Vector2(
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -((clientY - rect.top) / rect.height) * 2 + 1)
+  raycaster.setFromCamera(ndc, camera)
+  const hit = new THREE.Vector3()
+  return raycaster.ray.intersectPlane(floorPlane, hit) ? hit : null
+}
+function makeMarker(point) {
+  // Ground ring + vertical stalk + ball, depth-tested so nearer geometry (point
+  // clouds, etc.) occludes the pin like a real object in the scene.
+  const material = () => new THREE.MeshBasicMaterial({ color: 0xffcc33, side: THREE.DoubleSide })
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.19, 28), material())
+  ring.position.z = 0.01
+  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.5, 8), material())
+  stalk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1))
+  stalk.position.z = 0.25
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.05, 16, 12), material())
+  ball.position.z = 0.5
+  const marker = new THREE.Group()
+  marker.add(ring, stalk, ball)
+  marker.position.set(point.x, point.y, 0)
+  return marker
+}
+function placeMarker(clientX, clientY) {
+  const point = floorPointFromScreen(clientX, clientY)
+  if (!point) { return }
+  markerGroup.add(makeMarker(point))
+  markerCoordsVal.textContent = `x ${point.x.toFixed(2)}   y ${point.y.toFixed(2)}   z 0.00`
+  markerCoordsBox.style.display = "block"
+}
+function clearMarkers() {
+  while (markerGroup.children.length) {
+    const marker = markerGroup.children.pop()
+    marker.traverse((object) => { if (object.geometry) { object.geometry.dispose() }; if (object.material) { object.material.dispose() } })
+  }
+  markerCoordsBox.style.display = "none"
+}
+function hideCtxMenu() { ctxMenu.style.display = "none" }
+document.getElementById("ctx-place").addEventListener("click", () => { placeMarker(ctxClientX, ctxClientY); hideCtxMenu() })
+document.getElementById("ctx-clear").addEventListener("click", () => { clearMarkers(); hideCtxMenu() })
+window.addEventListener("pointerdown", (event) => { if (!ctxMenu.contains(event.target)) { hideCtxMenu() } }, true)
+window.addEventListener("keydown", (event) => { if (event.code === "Escape") { hideCtxMenu() } })
+
+// ── per-cloud customize popup (start color / end color / gradient axis) ──
+const custPanel = document.getElementById("cust-panel")
+const custStart = document.getElementById("cp-start")
+const custEnd = document.getElementById("cp-end")
+const custAxis = document.getElementById("cp-axis")
+let custStream = null
+function hideCustPanel() { custPanel.style.display = "none"; custStream = null }
+function openCustPanel(name, button) {
+  const entry = known.get(name); if (!entry) { return }
+  custStream = name
+  document.getElementById("cp-title").textContent = name.split("#")[0]
+  custStart.value = entry.gradStart || GRAD_PAIRS[0][0]
+  custEnd.value = entry.gradEnd || GRAD_PAIRS[0][1]
+  custAxis.value = String(entry.axis ?? 2)
+  custPanel.style.display = "block"
+  const rect = button.getBoundingClientRect()
+  const width = custPanel.offsetWidth, height = custPanel.offsetHeight
+  const left = Math.min(rect.left, innerWidth - width - 8)
+  const top = rect.bottom + height + 8 > innerHeight ? rect.top - height - 6 : rect.bottom + 6
+  custPanel.style.left = `${Math.max(8, left)}px`
+  custPanel.style.top = `${Math.max(8, top)}px`
+}
+document.getElementById("stream-list").addEventListener("click", (event) => {
+  const button = event.target.closest(".cust-btn"); if (!button) { return }
+  event.preventDefault()
+  openCustPanel(decodeURIComponent(button.dataset.cust), button)
+})
+custPanel.addEventListener("input", () => {
+  const entry = custStream && known.get(custStream); if (!entry) { return }
+  entry.gradStart = custStart.value
+  entry.gradEnd = custEnd.value
+  entry.axis = +custAxis.value
+  const cloud = clouds.get(custStream); if (cloud) { recolor(cloud) }
+})
+window.addEventListener("pointerdown", (event) => {
+  if (custStream && !custPanel.contains(event.target) && !event.target.closest(".cust-btn")) { hideCustPanel() }
+}, true)
+window.addEventListener("keydown", (event) => { if (event.code === "Escape") { hideCustPanel() } })
 function updateCamera(dt) {
   const forward = viewDir()
   const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize()
@@ -345,9 +502,11 @@ function sceneBounds() {
   })
   if (haveTrail) { return fitBox }
   clouds.forEach((cloud) => {
-    if (!cloud.points.visible) { return }
-    cloud.geom.computeBoundingBox()
-    if (cloud.geom.boundingBox) { fitTmp.copy(cloud.geom.boundingBox).applyMatrix4(cloud.points.matrix); fitBox.union(fitTmp) }
+    if (!cloud.group.visible) { return }
+    for (const frame of cloud.frames) {
+      frame.geom.computeBoundingBox()
+      if (frame.geom.boundingBox) { fitTmp.copy(frame.geom.boundingBox).applyMatrix4(frame.points.matrix); fitBox.union(fitTmp) }
+    }
   })
   return fitBox
 }
@@ -368,6 +527,10 @@ function fitView() {
 }
 document.getElementById("fit-top").addEventListener("click", () => { userMovedCamera = false; fitView() })
 
+// True while the backend is replaying a seek (between "reset" and its "time" ack).
+// The render loop skips drawing during this window so the viewer never shows the
+// robot sweeping from the recording's start up to the scrubbed position.
+let rebuilding = false
 const frameClock = new THREE.Clock()
 const camposEl = document.getElementById("campos")
 ;(function loop() {
@@ -378,7 +541,9 @@ const camposEl = document.getElementById("campos")
   }
   updateCamera(Math.min(frameClock.getDelta(), 0.1))
   if (camposEl) { camposEl.textContent = ` · CAM ${camera.position.x.toFixed(1)},${camera.position.y.toFixed(1)},${camera.position.z.toFixed(1)}` }
-  renderer.render(scene, camera)
+  // Hold the last frame while a seek rebuilds so the intermediate replay (robot
+  // sweeping from the start) never reaches the screen; the final state renders once.
+  if (!rebuilding) { renderer.render(scene, camera) }
 })()
 
 // ── TF tree: child -> { parent, matrix(T_parent_child) } ──
@@ -408,46 +573,84 @@ function b64ToBuffer(b64) {
 
 // ── point clouds ──
 const clouds = new Map()   // stream -> { points, geom, frame }
+// Each cloud stream is a group of one-or-more frame Points. In "latest" mode it
+// holds a single frame; accumulation keeps recent frames (time window) or a capped
+// history ("all") so the scene builds up into a map.
+const CLOUD_ACCUM_CAP = 240   // max retained frames per stream (bounds GPU memory)
+// Fallback anchor for clouds whose frame_id isn't in the tf tree (e.g. a lidar
+// frame like "mid360_link" that never gets a tf edge to the world). Such a cloud
+// is in the sensor frame, so without a pose every scan re-centers at the origin and
+// accumulation just stacks them. We instead ride the latest robot odometry pose so
+// accumulated scans spread out into a map. Updated by onOdom for anchored streams.
+let lastOdomWorld = null
 function ensureCloud(stream) {
   let cloud = clouds.get(stream)
   if (cloud) { return cloud }
-  const geom = new THREE.BufferGeometry()
-  geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(0), 3))
-  geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(0), 3))
   const material = new THREE.PointsMaterial({ size: 0.04, vertexColors: true, sizeAttenuation: true })
-  const points = new THREE.Points(geom, material)
-  points.matrixAutoUpdate = false
-  scene.add(points)
-  cloud = { points, geom, frame: "", stream }
+  const group = new THREE.Group()
+  scene.add(group)
+  cloud = { group, material, frames: [], frame: "", stream }
   clouds.set(stream, cloud)
   return cloud
 }
-function recolor(cloud) {
-  const position = cloud.geom.getAttribute("position"); if (!position || !position.count) { return }
-  const color = cloud.geom.getAttribute("color")
+function colorGeom(geom, entry) {
+  const position = geom.getAttribute("position"); if (!position || !position.count) { return }
+  const color = geom.getAttribute("color")
   const array = position.array, count = position.count
-  const entry = known.get(cloud.stream)
   const axisIdx = entry?.axis ?? 2
   let low = Infinity, high = -Infinity
   for (let i = 0; i < count; i++) { const value = array[i * 3 + axisIdx]; if (value < low) { low = value }; if (value > high) { high = value } }
   const span = high > low ? high - low : 1
-  const gradient = GRADIENTS[entry?.grad || gradName] || GRADIENTS.turbo
+  const [sr, sg, sb] = hexToRgb01(entry?.gradStart || GRAD_PAIRS[0][0])
+  const [er, eg, eb] = hexToRgb01(entry?.gradEnd || GRAD_PAIRS[0][1])
   const colors = color.array
   for (let i = 0; i < count; i++) {
-    const [r, g, b] = gradient((array[i * 3 + axisIdx] - low) / span)
-    colors[i * 3] = r; colors[i * 3 + 1] = g; colors[i * 3 + 2] = b
+    const t = clamp01((array[i * 3 + axisIdx] - low) / span)
+    colors[i * 3] = sr + (er - sr) * t; colors[i * 3 + 1] = sg + (eg - sg) * t; colors[i * 3 + 2] = sb + (eb - sb) * t
   }
   color.needsUpdate = true
+}
+function recolor(cloud) {
+  const entry = known.get(cloud.stream)
+  for (const frame of cloud.frames) { colorGeom(frame.geom, entry) }
+}
+function disposeCloudFrame(cloud, frame) {
+  cloud.group.remove(frame.points)
+  frame.geom.dispose()
+}
+function pruneCloudFrames(cloud, latestTs) {
+  const mode = known.get(cloud.stream)?.accum || "latest"
+  if (mode === "latest") {
+    while (cloud.frames.length > 1) { disposeCloudFrame(cloud, cloud.frames.shift()) }
+  } else if (mode !== "all") {
+    const windowSeconds = Number(mode)
+    if (isFinite(windowSeconds) && windowSeconds > 0) {
+      while (cloud.frames.length > 1 && (latestTs - cloud.frames[0].ts) > windowSeconds) { disposeCloudFrame(cloud, cloud.frames.shift()) }
+    }
+  }
+  while (cloud.frames.length > CLOUD_ACCUM_CAP) { disposeCloudFrame(cloud, cloud.frames.shift()) }
 }
 function onCloud(payload) {
   const cloud = ensureCloud(payload.stream)
   cloud.frame = payload.frame
   const xyz = new Float32Array(b64ToBuffer(payload.b64))
-  cloud.geom.setAttribute("position", new THREE.BufferAttribute(xyz, 3))
-  cloud.geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(xyz.length), 3))
-  cloud.geom.computeBoundingSphere()
-  recolor(cloud)
-  cloud.points.matrix.copy(worldMatrix(payload.frame))
+  const geom = new THREE.BufferGeometry()
+  geom.setAttribute("position", new THREE.BufferAttribute(xyz, 3))
+  geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(xyz.length), 3))
+  geom.computeBoundingSphere()
+  const points = new THREE.Points(geom, cloud.material)
+  points.matrixAutoUpdate = false
+  // Anchor by tf when the cloud's frame resolves; otherwise ride the robot's latest
+  // odometry pose so accumulated (sensor-frame) scans lay down a map instead of
+  // stacking at the origin.
+  if (tf.has(payload.frame)) { points.matrix.copy(worldMatrix(payload.frame)) }
+  else if (lastOdomWorld) { points.matrix.copy(lastOdomWorld) }
+  else { points.matrix.identity() }
+  cloud.group.add(points)
+  const frame = { ts: payload.ts ?? 0, points, geom }
+  cloud.frames.push(frame)
+  colorGeom(geom, known.get(cloud.stream))
+  pruneCloudFrames(cloud, frame.ts)
   fitDirty = true
   addStream(payload.stream, "cloud")
 }
@@ -476,9 +679,27 @@ function ensureOdom(stream) {
   geom.setDrawRange(0, 0)
   const trail = new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ color }))
   scene.add(group); scene.add(trail)
-  odom = { group, trail, geom, count: 0, last: null }
+  // ts (one per vertex) lets the window mode drop old segments; start is the first
+  // still-shown vertex (kept even so whole segments are dropped together).
+  odom = { group, trail, geom, tsArray: new Float64Array(TRAIL_CAP), count: 0, start: 0, last: null }
   odoms.set(stream, odom)
   return odom
+}
+// Latest = no trail (just the pose marker); accumulate = full path; a number = the
+// last N seconds of path (older segments pruned via the draw-range offset).
+function updateOdomTrailDisplay(odom, stream, latestTs) {
+  const entry = known.get(stream)
+  const on = entry?.on !== false
+  const mode = entry?.accum || "all"
+  if (mode === "latest") { odom.trail.visible = false; return }
+  odom.trail.visible = on
+  const windowSeconds = Number(mode)
+  if (mode === "all" || !isFinite(windowSeconds) || windowSeconds <= 0) {
+    odom.start = 0; odom.geom.setDrawRange(0, odom.count); return
+  }
+  const cutoff = latestTs - windowSeconds
+  while (odom.start + 2 < odom.count && odom.tsArray[odom.start] < cutoff) { odom.start += 2 }
+  odom.geom.setDrawRange(odom.start, Math.max(0, odom.count - odom.start))
 }
 function onOdom(payload) {
   const odom = ensureOdom(payload.stream)
@@ -489,19 +710,33 @@ function onOdom(payload) {
   odom.group.matrix.copy(world)
   const worldPosition = new THREE.Vector3().setFromMatrixPosition(world)
   const anchored = payload.frame !== ""
+  if (anchored) { lastOdomWorld = world.clone() }
   const step = odom.last ? odom.last.distanceTo(worldPosition) : Infinity
-  if (anchored && odom.last && step <= TRAIL_JUMP && odom.count + 2 <= TRAIL_CAP) {
-    const array = odom.geom.getAttribute("position").array
-    const base = odom.count * 3
-    array[base] = odom.last.x; array[base + 1] = odom.last.y; array[base + 2] = odom.last.z
-    array[base + 3] = worldPosition.x; array[base + 4] = worldPosition.y; array[base + 5] = worldPosition.z
-    odom.count += 2
-    odom.geom.getAttribute("position").needsUpdate = true
-    odom.geom.setDrawRange(0, odom.count)
-    fitDirty = true
+  const ts = payload.ts ?? 0
+  if (anchored && odom.last && step <= TRAIL_JUMP) {
+    // Full buffer: compact away already-pruned segments if any, else stop growing.
+    if (odom.count + 2 > TRAIL_CAP) {
+      if (odom.start > 0) {
+        const positions = odom.geom.getAttribute("position").array
+        positions.copyWithin(0, odom.start * 3, odom.count * 3)
+        odom.tsArray.copyWithin(0, odom.start, odom.count)
+        odom.count -= odom.start; odom.start = 0
+      }
+    }
+    if (odom.count + 2 <= TRAIL_CAP) {
+      const array = odom.geom.getAttribute("position").array
+      const base = odom.count * 3
+      array[base] = odom.last.x; array[base + 1] = odom.last.y; array[base + 2] = odom.last.z
+      array[base + 3] = worldPosition.x; array[base + 4] = worldPosition.y; array[base + 5] = worldPosition.z
+      odom.tsArray[odom.count] = ts; odom.tsArray[odom.count + 1] = ts
+      odom.count += 2
+      odom.geom.getAttribute("position").needsUpdate = true
+      fitDirty = true
+    }
   }
   odom.last = worldPosition
   addStream(payload.stream, "odom", anchored)
+  updateOdomTrailDisplay(odom, payload.stream, ts)
 }
 
 // ── planned path per stream ──
@@ -575,49 +810,62 @@ function onFrame(payload) {
 
 // ── clear scene state (on load / seek reset) ──
 function clearScene() {
-  for (const cloud of clouds.values()) { scene.remove(cloud.points); cloud.geom.dispose(); cloud.points.material.dispose() }
+  for (const cloud of clouds.values()) {
+    scene.remove(cloud.group)
+    for (const frame of cloud.frames) { frame.geom.dispose() }
+    cloud.material.dispose()
+  }
   clouds.clear()
   for (const odom of odoms.values()) { scene.remove(odom.group); scene.remove(odom.trail); odom.geom.dispose() }
   odoms.clear()
   for (const path of paths.values()) { scene.remove(path.line); path.geom.dispose() }
   paths.clear()
   tf.clear()
+  lastOdomWorld = null
 }
 
 // ── stream checklist ──
 const known = new Map()   // name -> { kind, on }
 function setVisible(name, on) {
-  const cloud = clouds.get(name); if (cloud) { cloud.points.visible = on }
-  const odom = odoms.get(name); if (odom) { odom.group.visible = on; odom.trail.visible = on }
+  const cloud = clouds.get(name); if (cloud) { cloud.group.visible = on }
+  const odom = odoms.get(name); if (odom) { odom.group.visible = on; odom.trail.visible = on && (known.get(name)?.accum || "all") !== "latest" }
   const path = paths.get(name); if (path) { path.line.visible = on }
 }
 function refreshStreams() {
   const list = document.getElementById("stream-list")
   if (!known.size) { list.innerHTML = '<div class="empty">none yet</div>'; return }
   const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, entry]) => {
-    // Cloud streams get their own gradient + gradient-axis pickers; everything else shows a kind tag.
-    const axis = entry.axis ?? 2
-    const control = entry.kind === "cloud"
-      ? `<select class="grad-pick" data-g="${encodeURIComponent(name)}">` +
-        GRAD_NAMES.map((gradient) => `<option value="${gradient}" ${gradient === entry.grad ? "selected" : ""}>${gradient}</option>`).join("") + `</select>` +
-        `<select class="grad-pick axis-pick" data-a="${encodeURIComponent(name)}">` +
-        [["2", "z"], ["0", "x"], ["1", "y"]].map(([value, label]) => `<option value="${value}" ${+value === axis ? "selected" : ""}>${label}</option>`).join("") + `</select>`
-      : `<span class="tag kc-${entry.kind}">${entry.kind}</span>`
+    // Cloud rows get gradient + gradient-axis pickers; cloud & odom rows also get an
+    // accumulation picker (latest / accumulate / time window). Others show a kind tag.
+    const accum = entry.accum || (entry.kind === "odom" ? "all" : "latest")
+    const accumSelect = (entry.kind === "cloud" || entry.kind === "odom")
+      ? `<select class="grad-pick accum-pick" data-acc="${encodeURIComponent(name)}">` +
+        ACCUM_OPTIONS.map(([value, label]) => `<option value="${value}" ${value === accum ? "selected" : ""}>${label}</option>`).join("") + `</select>`
+      : ""
+    let control
+    if (entry.kind === "cloud") {
+      control = `<button class="cust-btn" data-cust="${encodeURIComponent(name)}">` +
+        `<span class="cb-idle">lidar</span><span class="cb-hover">customize</span></button>` +
+        accumSelect
+    } else if (entry.kind === "odom") {
+      control = `<span class="tag kc-odom">odom</span>` + accumSelect
+    } else {
+      control = `<span class="tag kc-${entry.kind}">${entry.kind}</span>`
+    }
     return `<div class="row"><label><input type="checkbox" data-s="${encodeURIComponent(name)}" ${entry.on ? "checked" : ""}>` +
       `<span class="nm">${name.split("#")[0].replace(/[&<>]/g, "")}</span></label>${control}</div>`
   }).join("")
   if (list.dataset.sig !== rows) { list.dataset.sig = rows; list.innerHTML = rows }
 }
 document.getElementById("stream-list").addEventListener("change", (event) => {
-  const gradPick = event.target.closest("select[data-g]")
-  const axisPick = event.target.closest("select[data-a]")
-  if (gradPick || axisPick) {
-    const name = decodeURIComponent(gradPick ? gradPick.dataset.g : axisPick.dataset.a)
+  const accumPick = event.target.closest("select[data-acc]")
+  if (accumPick) {
+    const name = decodeURIComponent(accumPick.dataset.acc)
     const entry = known.get(name)
     if (entry) {
-      if (gradPick) { entry.grad = gradPick.value } else { entry.axis = +axisPick.value }
-      const cloud = clouds.get(name); if (cloud) { recolor(cloud) }
-      refreshStreams()
+      entry.accum = accumPick.value
+      app.send("accum", { stream: name, mode: entry.accum })
+      app.send("seek", { t: timeline.t })   // rebuild the scene with the new policy
     }
     return
   }
@@ -629,11 +877,14 @@ function addStream(name, kind, defaultOn = true) {
   const current = known.get(name)
   if (!current) {
     const entry = { kind: kind || "…", on: defaultOn }
-    if (kind === "cloud") { entry.grad = nextDefaultGradient() }
+    if (kind === "cloud") { const pair = nextDefaultGradient(); entry.gradStart = pair[0]; entry.gradEnd = pair[1]; entry.axis = 2; entry.accum = "latest" }
+    if (kind === "odom") { entry.accum = "all" }
     known.set(name, entry); refreshStreams()
   } else if (kind && current.kind !== kind) {
     current.kind = kind
-    if (kind === "cloud" && !current.grad) { current.grad = nextDefaultGradient() }
+    if (kind === "cloud" && !current.gradStart) { const pair = nextDefaultGradient(); current.gradStart = pair[0]; current.gradEnd = pair[1]; current.axis = current.axis ?? 2 }
+    if (kind === "cloud" && !current.accum) { current.accum = "latest" }
+    if (kind === "odom" && !current.accum) { current.accum = "all" }
     refreshStreams()
   }
   if (known.get(name)?.on === false) { setVisible(name, false) }
@@ -644,6 +895,7 @@ function addStream(name, kind, defaultOn = true) {
 const overlay = document.getElementById("overlay")
 const transport = document.getElementById("transport")
 const panel = document.getElementById("panel")
+document.getElementById("streams-toggle").addEventListener("click", () => panel.classList.toggle("collapsed"))
 const playBtn = document.getElementById("playbtn")
 const scrub = document.getElementById("scrub")
 const clock = document.getElementById("clock")
@@ -754,15 +1006,22 @@ app.receiveRequest((kind, payload) => {
   else if (kind === "loading") { setStatus("loading", "opening " + (payload.name || "")) }
   else if (kind === "loaded") {
     clearScene(); known.clear(); refreshStreams()
+    rebuilding = false
     userMovedCamera = false; fitDirty = true
     loadedName.textContent = "· " + (payload.name || payload.path || "")
     timeline = { t0: payload.t0, t1: payload.t1, t: payload.t0, playing: true }
     overlay.classList.add("hidden"); transport.classList.remove("hidden"); panel.style.display = "block"
     renderTransport(); setStatus("ready")
   }
-  else if (kind === "reset") { clearScene(); known.clear(); refreshStreams() }
+  // A seek resets the scene but keeps the stream list + per-stream settings
+  // (gradient/axis/accumulation/visibility) so they survive scrubbing.
+  else if (kind === "reset") { clearScene(); rebuilding = true }
   else if (kind === "time") {
     timeline.t0 = payload.t0; timeline.t1 = payload.t1; timeline.t = payload.t; timeline.playing = payload.playing
+    // A seek just finished rebuilding the scene: paint the completed state now so
+    // each scrub step shows its final position even if the render loop's skip
+    // window straddles this frame.
+    if (rebuilding) { rebuilding = false; renderer.render(scene, camera) }
     renderTransport(); setStatus(payload.playing ? "playing" : "ready")
     if (seekInFlight) { seekInFlight = false; flushSeek() }
   }

@@ -315,6 +315,7 @@ const playback = {
     speed: 4,
     timer: null,
     lastTick: 0,
+    accumConfig: new Map(),          // stream-name -> "latest" | "all" | window-seconds string
 }
 
 function closeRecording() {
@@ -340,6 +341,7 @@ function closeRecording() {
     playback.cursor = 0
     playback.playhead = 0
     playback.playing = false
+    playback.accumConfig = new Map()
 }
 
 async function openRecording(nameOrPath) {
@@ -475,6 +477,11 @@ function emitAt(sortedCursor) {
     const kind = KIND_NAMES[playback.kindArray[index]] || kindOfMessage(message)
     const frame = frameForMessage(streamName, kind, message)
     if (frame) {
+        // Stamp cloud/odom frames with their timeline ts so the frontend can
+        // accumulate them within a time window.
+        if (frame[0] === "cloud" || frame[0] === "odom") {
+            frame[1].ts = playback.tsArray[index]
+        }
         dimApp.send(frame[0], frame[1])
     }
 }
@@ -532,31 +539,62 @@ function pausePlaying() {
     sendTime()
 }
 
-// Seek by resetting the scene and fast-forwarding from the start. Clouds only
-// need their newest frame before the target, so intermediate clouds are skipped;
-// odom/tf/path replay in full to rebuild trails and the transform tree.
+// Seek by resetting the scene and fast-forwarding from the start. Odom/tf/path
+// replay in full (rebuild trails + transform tree). Each cloud stream's accumulation
+// policy (latest / time-window / all) decides WHICH cloud frames survive, but the
+// survivors are still emitted in timeline order and interleaved with tf/odom, so the
+// frontend bakes each cloud with the transform that was current at ITS timestamp.
+// (Emitting all clouds at the end would place them with the final pose, stacking an
+// accumulated cloud on top of itself — it would look like a single instantaneous scan.)
 function seekTo(targetTs) {
     if (!playback.db) {
         return
     }
     const clamped = Math.max(playback.t0, Math.min(playback.t1, targetTs))
     dimApp.send("reset", {})
-    playback.cursor = 0
-    const latestCloud = new Map()   // stream-index -> sortedCursor (only newest is emitted)
-    while (playback.cursor < playback.count && playback.tsArray[playback.order[playback.cursor]] <= clamped) {
-        const index = playback.order[playback.cursor]
+    // Pass 1: gather each cloud stream's cursors so we can pick the accumulation set.
+    const cloudCursors = new Map()   // stream-index -> [sortedCursor, ...] up to target
+    let scan = 0
+    while (scan < playback.count && playback.tsArray[playback.order[scan]] <= clamped) {
+        const index = playback.order[scan]
         if (playback.kindArray[index] === KIND_CODES.cloud) {
-            latestCloud.set(playback.streamArray[index], playback.cursor)
-        } else {
+            const streamIndex = playback.streamArray[index]
+            let list = cloudCursors.get(streamIndex)
+            if (!list) { list = []; cloudCursors.set(streamIndex, list) }
+            list.push(scan)
+        }
+        scan++
+    }
+    const keepClouds = new Set()
+    for (const [streamIndex, cursors] of cloudCursors) {
+        for (const sortedCursor of selectCloudCursors(streamIndex, cursors, clamped)) {
+            keepClouds.add(sortedCursor)
+        }
+    }
+    // Pass 2: emit in timeline order — every non-cloud, plus the kept cloud frames.
+    playback.cursor = 0
+    while (playback.cursor < playback.count && playback.tsArray[playback.order[playback.cursor]] <= clamped) {
+        const isCloud = playback.kindArray[playback.order[playback.cursor]] === KIND_CODES.cloud
+        if (!isCloud || keepClouds.has(playback.cursor)) {
             emitAt(playback.cursor)
         }
         playback.cursor++
     }
-    for (const sortedCursor of latestCloud.values()) {
-        emitAt(sortedCursor)
-    }
     playback.playhead = clamped
     sendTime()
+}
+
+const CLOUD_SEEK_CAP = 240   // max cloud frames re-emitted per stream on seek (bounds cost)
+function selectCloudCursors(streamIndex, cursors, clamped) {
+    if (!cursors.length) { return cursors }
+    const mode = playback.accumConfig.get(playback.streamNames[streamIndex]) || "latest"
+    if (mode === "latest") { return [cursors[cursors.length - 1]] }
+    if (mode === "all") { return cursors.slice(-CLOUD_SEEK_CAP) }
+    const windowSeconds = Number(mode)
+    if (!isFinite(windowSeconds) || windowSeconds <= 0) { return [cursors[cursors.length - 1]] }
+    const cutoff = clamped - windowSeconds
+    const withinWindow = cursors.filter((sortedCursor) => playback.tsArray[playback.order[sortedCursor]] >= cutoff)
+    return withinWindow.slice(-CLOUD_SEEK_CAP)
 }
 
 // ── app bus ─────────────────────────────────────────────────────────────────
@@ -594,6 +632,11 @@ dimApp.onReceive(async (kind, payload) => {
         const value = Number(payload?.speed)
         if (isFinite(value) && value > 0) {
             playback.speed = value
+        }
+    } else if (kind === "accum") {
+        // Per-stream cloud accumulation policy; consulted by seekTo when rebuilding.
+        if (payload?.stream) {
+            playback.accumConfig.set(String(payload.stream), String(payload.mode || "latest"))
         }
     } else if (kind === "close") {
         closeRecording()
