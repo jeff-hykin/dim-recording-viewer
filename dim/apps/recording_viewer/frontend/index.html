@@ -64,6 +64,7 @@
   input[type=checkbox] { accent-color: var(--primary); }
   select { width: 100%; appearance: none; font: inherit; font-size: 12px; color: var(--fg); cursor: pointer;
     background: var(--card); border: 1px solid var(--input); border-radius: var(--radius); padding: 6px 9px; margin-top: 4px; }
+  .row select.grad-pick { width: 78px; flex: none; font-size: 10px; padding: 2px 5px; margin: 0; }
   .ctrl-label { color: var(--muted-fg); margin-top: 8px; font-size: 11px; }
 
   /* recordings browser */
@@ -134,7 +135,7 @@
   <h2>Streams</h2>
   <div id="stream-list"><div class="empty">none yet</div></div>
   <h2>Cloud color</h2>
-  <div class="ctrl-label">gradient</div>
+  <div class="ctrl-label">all clouds (each stream has its own picker above)</div>
   <select id="gradient">
     <option value="turbo">Turbo</option>
     <option value="viridis">Viridis</option>
@@ -155,7 +156,7 @@
   <canvas id="cam-canvas" width="320" height="180"></canvas>
 </div>
 
-<div id="help">DRAG ORBIT · SCROLL ZOOM · RIGHT-DRAG PAN</div>
+<div id="help">WASD MOVE · Q/E DOWN/UP · DRAG LOOK · SCROLL DOLLY · RIGHT-DRAG PAN · DBLCLICK RECENTER<span id="campos"></span></div>
 
 <div class="transport hidden" id="transport">
   <button class="playbtn" id="playbtn" title="Play/Pause">▶</button>
@@ -184,7 +185,6 @@
 
 <script type="module">
 import * as THREE from "three"
-import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js?external=three"
 import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.0/frontend.js"
 
 // ── colormaps: t in [0,1] -> [r,g,b] (0..1) ──
@@ -197,6 +197,13 @@ const GRADIENTS = {
   grayscale: (t) => [0.15 + 0.85 * t, 0.15 + 0.85 * t, 0.15 + 0.85 * t],
 }
 let gradName = "turbo", axisIdx = 2
+const GRAD_NAMES = Object.keys(GRADIENTS)
+// Each new cloud stream starts on a different gradient so overlapping clouds are
+// easy to tell apart at a glance.
+function nextDefaultGradient() {
+  const used = [...known.values()].filter((entry) => entry.grad).length
+  return GRAD_NAMES[used % GRAD_NAMES.length]
+}
 
 // ── three.js scene (ROS convention: Z up) ──
 const host = document.getElementById("scene")
@@ -207,9 +214,77 @@ host.appendChild(renderer.domElement)
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 5000)
 camera.up.set(0, 0, 1)
-camera.position.set(6, -6, 4)
-const controls = new OrbitControls(camera, renderer.domElement)
-controls.enableDamping = true
+
+// Auto-fit state (declared before the input handlers, which flip userMovedCamera).
+let userMovedCamera = false, fitDirty = false, lastFit = 0
+
+// ── first-person fly controls: WASD move, Q/E down/up, drag to look, right-drag
+// pan, scroll to dolly, double-click to recenter. Any manual input turns off the
+// auto-fit so the camera stops jumping as new frames stream in.
+const look = { yaw: 0, pitch: 0 }
+function viewDir() {
+  const cosPitch = Math.cos(look.pitch)
+  return new THREE.Vector3(cosPitch * Math.cos(look.yaw), cosPitch * Math.sin(look.yaw), Math.sin(look.pitch))
+}
+function setLookFrom(position, target) {
+  camera.position.copy(position)
+  const direction = new THREE.Vector3().subVectors(target, position).normalize()
+  look.yaw = Math.atan2(direction.y, direction.x)
+  look.pitch = Math.asin(THREE.MathUtils.clamp(direction.z, -1, 1))
+}
+setLookFrom(new THREE.Vector3(6, -6, 4), new THREE.Vector3(0, 0, 0))
+const heldKeys = new Set()
+window.addEventListener("keydown", (event) => {
+  if (event.target instanceof HTMLSelectElement || event.target instanceof HTMLInputElement) { return }
+  heldKeys.add(event.code)
+  if (event.code === "Space") { event.preventDefault() }
+})
+window.addEventListener("keyup", (event) => heldKeys.delete(event.code))
+window.addEventListener("blur", () => heldKeys.clear())
+let dragButton = -1   // 0 = look, 2 = pan
+renderer.domElement.addEventListener("pointerdown", (event) => {
+  dragButton = event.button; userMovedCamera = true
+  renderer.domElement.setPointerCapture(event.pointerId)
+})
+renderer.domElement.addEventListener("pointerup", () => { dragButton = -1 })
+renderer.domElement.addEventListener("pointercancel", () => { dragButton = -1 })
+renderer.domElement.addEventListener("pointermove", (event) => {
+  if (dragButton === -1) { return }
+  if (event.buttons === 0) { dragButton = -1; return }   // missed pointerup (released off-window)
+  if (dragButton === 0) {
+    // Grab-the-world look; pitch clamped to ±80° so yaw never reads as roll.
+    look.yaw += event.movementX * 0.004
+    look.pitch = THREE.MathUtils.clamp(look.pitch + event.movementY * 0.004, -1.4, 1.4)
+  } else if (dragButton === 2) {
+    const forward = viewDir()
+    const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize()
+    const screenUp = new THREE.Vector3().crossVectors(right, forward)
+    camera.position.addScaledVector(right, -event.movementX * 0.015)
+    camera.position.addScaledVector(screenUp, event.movementY * 0.015)
+  }
+})
+renderer.domElement.addEventListener("contextmenu", (event) => event.preventDefault())
+// Scroll = fly forward/back along the view direction. Per-event clamp keeps
+// trackpad momentum flings from teleporting the camera.
+renderer.domElement.addEventListener("wheel", (event) => {
+  userMovedCamera = true
+  camera.position.addScaledVector(viewDir(), THREE.MathUtils.clamp(-event.deltaY * 0.01, -1, 1))
+}, { passive: true })
+renderer.domElement.addEventListener("dblclick", () => { userMovedCamera = false; fitView() })
+function updateCamera(dt) {
+  const forward = viewDir()
+  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize()
+  const speed = (heldKeys.has("ShiftLeft") || heldKeys.has("ShiftRight") ? 15 : 5) * dt
+  let moved = false
+  if (heldKeys.has("KeyW")) { camera.position.addScaledVector(forward, speed); moved = true }
+  if (heldKeys.has("KeyS")) { camera.position.addScaledVector(forward, -speed); moved = true }
+  if (heldKeys.has("KeyA")) { camera.position.addScaledVector(right, -speed); moved = true }
+  if (heldKeys.has("KeyD")) { camera.position.addScaledVector(right, speed); moved = true }
+  if (heldKeys.has("KeyE") || heldKeys.has("Space")) { camera.position.z += speed; moved = true }
+  if (heldKeys.has("KeyQ")) { camera.position.z -= speed; moved = true }
+  if (moved) { userMovedCamera = true }
+  camera.lookAt(new THREE.Vector3().addVectors(camera.position, forward))
+}
 
 const THEME = {
   dark:  { grid1: 0x2b3a44, grid2: 0x19242b, sky: 0xbfd8ff, ground: 0x101820 },
@@ -228,19 +303,48 @@ function applyTheme() {
   scene.add(hemi)
 }
 applyTheme()
-const axesHelper = new THREE.AxesHelper(1.5)
-scene.add(axesHelper)
+// Solid cylinder axes instead of AxesHelper: 1px lines lying in the grid plane
+// z-fight with the GridHelper; real thickness (and a tiny z lift) avoids that.
+function makeAxes(length, radius) {
+  const axesGroup = new THREE.Group()
+  const axisSpecs = [
+    { color: 0xef4444, dir: new THREE.Vector3(1, 0, 0) },
+    { color: 0x22c55e, dir: new THREE.Vector3(0, 1, 0) },
+    { color: 0x3b82f6, dir: new THREE.Vector3(0, 0, 1) },
+  ]
+  for (const { color, dir } of axisSpecs) {
+    const rod = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius, radius, length, 12),
+      new THREE.MeshBasicMaterial({ color }))
+    rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir)
+    rod.position.copy(dir).multiplyScalar(length / 2)
+    axesGroup.add(rod)
+  }
+  axesGroup.position.z = 0.002
+  return axesGroup
+}
+scene.add(makeAxes(1.5, 0.02))
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => setTimeout(applyTheme, 0))
 
+// Cap the horizontal FOV: on very wide windows keep hfov ≤ MAX_HFOV by shrinking
+// the vertical fov, so edges don't get fisheye-stretched.
+const BASE_VFOV = 60, MAX_HFOV = 100
 function resize() {
   const width = host.clientWidth, height = host.clientHeight
-  renderer.setSize(width, height, false); camera.aspect = width / height; camera.updateProjectionMatrix()
+  // setSize's updateStyle must stay true (default): without CSS sizing the canvas
+  // displays at its attribute size (w × pixelRatio), clipped to the top-left quarter,
+  // which pushes the scene center to the window's bottom-right.
+  renderer.setSize(width, height)
+  camera.aspect = width / height
+  const halfHorizontal = Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_VFOV) / 2) * camera.aspect)
+  camera.fov = halfHorizontal > THREE.MathUtils.degToRad(MAX_HFOV) / 2
+    ? THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(MAX_HFOV) / 2) / camera.aspect))
+    : BASE_VFOV
+  camera.updateProjectionMatrix()
 }
 new ResizeObserver(resize).observe(host); resize()
 
-// ── camera framing: auto-fit the whole scene until the user orbits, then leave it ──
-let userMovedCamera = false, fitDirty = false, lastFit = 0
-controls.addEventListener("start", () => { userMovedCamera = true })
+// ── camera framing: auto-fit the whole scene until the user moves, then leave it ──
 const fitBox = new THREE.Box3(), fitTmp = new THREE.Box3(), fitVec = new THREE.Vector3()
 function sceneBounds() {
   // Prefer the trajectory extent — it is the meaningful scene size. Cloud scans can
@@ -269,26 +373,27 @@ function fitView() {
   const size = box.getSize(new THREE.Vector3())
   const horizontal = Math.max(size.x, size.y, 1)
   const distance = (horizontal * 0.5 / Math.tan((camera.fov * Math.PI / 180) / 2)) * 1.2
-  controls.target.copy(center)
   // Look ACROSS the longer horizontal axis (not down it) so a long corridor spreads
   // over the screen width instead of foreshortening to a line; elevate for a 3/4 view.
-  if (size.x >= size.y) {
-    camera.position.set(center.x - distance * 0.12, center.y - distance * 0.72, center.z + distance * 0.62)
-  } else {
-    camera.position.set(center.x + distance * 0.72, center.y - distance * 0.12, center.z + distance * 0.62)
-  }
-  camera.far = distance * 30; camera.near = Math.max(0.05, distance / 800); camera.updateProjectionMatrix()
-  controls.update()
+  const position = size.x >= size.y
+    ? new THREE.Vector3(center.x - distance * 0.12, center.y - distance * 0.72, center.z + distance * 0.62)
+    : new THREE.Vector3(center.x + distance * 0.72, center.y - distance * 0.12, center.z + distance * 0.62)
+  setLookFrom(position, center)
+  camera.far = Math.max(distance * 30, 5000); camera.near = Math.max(0.05, distance / 800); camera.updateProjectionMatrix()
 }
 document.getElementById("fit-top").addEventListener("click", () => { userMovedCamera = false; fitView() })
 
+const frameClock = new THREE.Clock()
+const camposEl = document.getElementById("campos")
 ;(function loop() {
   requestAnimationFrame(loop)
   if (fitDirty && !userMovedCamera) {
     const now = performance.now()
     if (now - lastFit > 200) { fitView(); lastFit = now; fitDirty = false }
   }
-  controls.update(); renderer.render(scene, camera)
+  updateCamera(Math.min(frameClock.getDelta(), 0.1))
+  if (camposEl) { camposEl.textContent = ` · CAM ${camera.position.x.toFixed(1)},${camera.position.y.toFixed(1)},${camera.position.z.toFixed(1)}` }
+  renderer.render(scene, camera)
 })()
 
 // ── TF tree: child -> { parent, matrix(T_parent_child) } ──
@@ -328,7 +433,7 @@ function ensureCloud(stream) {
   const points = new THREE.Points(geom, material)
   points.matrixAutoUpdate = false
   scene.add(points)
-  cloud = { points, geom, frame: "" }
+  cloud = { points, geom, frame: "", stream }
   clouds.set(stream, cloud)
   return cloud
 }
@@ -339,7 +444,7 @@ function recolor(cloud) {
   let low = Infinity, high = -Infinity
   for (let i = 0; i < count; i++) { const value = array[i * 3 + axisIdx]; if (value < low) { low = value }; if (value > high) { high = value } }
   const span = high > low ? high - low : 1
-  const gradient = GRADIENTS[gradName] || GRADIENTS.turbo
+  const gradient = GRADIENTS[known.get(cloud.stream)?.grad || gradName] || GRADIENTS.turbo
   const colors = color.array
   for (let i = 0; i < count; i++) {
     const [r, g, b] = gradient((array[i * 3 + axisIdx] - low) / span)
@@ -378,7 +483,7 @@ function ensureOdom(stream) {
     new THREE.BoxGeometry(0.5, 0.28, 0.22),
     new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.6 }))
   body.position.z = 0.11
-  group.add(body); group.add(new THREE.AxesHelper(0.6))
+  group.add(body); group.add(makeAxes(0.6, 0.012))
   const geom = new THREE.BufferGeometry()
   geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * TRAIL_CAP), 3))
   geom.setDrawRange(0, 0)
@@ -502,25 +607,49 @@ function setVisible(name, on) {
 function refreshStreams() {
   const list = document.getElementById("stream-list")
   if (!known.size) { list.innerHTML = '<div class="empty">none yet</div>'; return }
-  const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, entry]) =>
-    `<div class="row"><label><input type="checkbox" data-s="${encodeURIComponent(name)}" ${entry.on ? "checked" : ""}>` +
-    `<span class="nm">${name.split("#")[0].replace(/[&<>]/g, "")}</span></label><span class="tag kc-${entry.kind}">${entry.kind}</span></div>`).join("")
+  const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, entry]) => {
+    // Cloud streams get their own gradient picker; everything else shows a kind tag.
+    const control = entry.kind === "cloud"
+      ? `<select class="grad-pick" data-g="${encodeURIComponent(name)}">` +
+        GRAD_NAMES.map((gradient) => `<option value="${gradient}" ${gradient === entry.grad ? "selected" : ""}>${gradient}</option>`).join("") + `</select>`
+      : `<span class="tag kc-${entry.kind}">${entry.kind}</span>`
+    return `<div class="row"><label><input type="checkbox" data-s="${encodeURIComponent(name)}" ${entry.on ? "checked" : ""}>` +
+      `<span class="nm">${name.split("#")[0].replace(/[&<>]/g, "")}</span></label>${control}</div>`
+  }).join("")
   if (list.dataset.sig !== rows) { list.dataset.sig = rows; list.innerHTML = rows }
 }
 document.getElementById("stream-list").addEventListener("change", (event) => {
+  const gradPick = event.target.closest("select[data-g]")
+  if (gradPick) {
+    const name = decodeURIComponent(gradPick.dataset.g)
+    const entry = known.get(name)
+    if (entry) { entry.grad = gradPick.value; const cloud = clouds.get(name); if (cloud) { recolor(cloud) }; refreshStreams() }
+    return
+  }
   const checkbox = event.target.closest("input[data-s]"); if (!checkbox) { return }
   const name = decodeURIComponent(checkbox.dataset.s)
   const entry = known.get(name); if (entry) { entry.on = checkbox.checked; setVisible(name, checkbox.checked) }
 })
 function addStream(name, kind, defaultOn = true) {
   const current = known.get(name)
-  if (!current) { known.set(name, { kind: kind || "…", on: defaultOn }); refreshStreams() }
-  else if (kind && current.kind !== kind) { current.kind = kind; refreshStreams() }
+  if (!current) {
+    const entry = { kind: kind || "…", on: defaultOn }
+    if (kind === "cloud") { entry.grad = nextDefaultGradient() }
+    known.set(name, entry); refreshStreams()
+  } else if (kind && current.kind !== kind) {
+    current.kind = kind
+    if (kind === "cloud" && !current.grad) { current.grad = nextDefaultGradient() }
+    refreshStreams()
+  }
   if (known.get(name)?.on === false) { setVisible(name, false) }
 }
 
-// ── cloud color controls ──
-document.getElementById("gradient").addEventListener("change", (event) => { gradName = event.target.value; clouds.forEach(recolor) })
+// ── cloud color controls (global gradient resets every stream's picker) ──
+document.getElementById("gradient").addEventListener("change", (event) => {
+  gradName = event.target.value
+  for (const entry of known.values()) { if (entry.grad) { entry.grad = gradName } }
+  clouds.forEach(recolor); refreshStreams()
+})
 document.getElementById("axis").addEventListener("change", (event) => { axisIdx = +event.target.value; clouds.forEach(recolor) })
 
 // ── transport / timeline ──

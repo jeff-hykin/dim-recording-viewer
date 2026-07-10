@@ -12,7 +12,7 @@
 // and never cross the app bus.
 
 import { DimAppBackend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.0/backend.js"
-import { Database } from "jsr:@db/sqlite@0.12"
+import { DatabaseSync } from "node:sqlite"
 import { decode } from "jsr:@dimos/msgs@0.1.4"
 
 const dimApp = new DimAppBackend()
@@ -353,7 +353,7 @@ async function openRecording(nameOrPath) {
 
     let db
     try {
-        db = new Database(path, { readonly: true })
+        db = new DatabaseSync(path, { readOnly: true })
     } catch (openError) {
         dimApp.send("error", { message: `Failed to open ${path}: ${openError.message}` })
         return
@@ -403,7 +403,10 @@ async function openRecording(nameOrPath) {
         const stream = active[streamIndex]
         streamNames.push(stream.name)
         blobStatements.push(db.prepare(`SELECT data FROM "${stream.name}_blob" WHERE id=?`))
-        for (const record of db.prepare(`SELECT id, ts FROM "${stream.name}"`).iter()) {
+        // node:sqlite's row iterator segfaults on large tables, so read the small
+        // id/ts columns per-stream with .all() (a transient array, freed after copy
+        // into the typed timeline). Only these tiny columns load — blobs stay on disk.
+        for (const record of db.prepare(`SELECT id, ts FROM "${stream.name}"`).all()) {
             tsArray[write] = record.ts
             idArray[write] = record.id
             streamArray[write] = streamIndex
