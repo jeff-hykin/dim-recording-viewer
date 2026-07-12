@@ -1313,6 +1313,40 @@ function ensureImageWindow(name) {
   new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => saveWindowGeom(name, win), 250) }).observe(el)
   return win
 }
+// JPEG/PNG-encoded depth streams arrive as 8-bit grayscale (the true 16-bit depth was
+// already flattened at record time). Decode the picture, then re-color the grayscale
+// through the same jet ramp as raw depth so it reads as depth, not a washed-out photo.
+function drawCompressedDepth(win, payload) {
+  const image = new Image()
+  image.onload = () => {
+    const width = image.width, height = image.height
+    if (!win.decodeCanvas) { win.decodeCanvas = document.createElement("canvas") }
+    const decodeCanvas = win.decodeCanvas
+    decodeCanvas.width = width; decodeCanvas.height = height
+    const decodeCtx = decodeCanvas.getContext("2d", { willReadFrequently: true })
+    decodeCtx.drawImage(image, 0, 0)
+    const source = decodeCtx.getImageData(0, 0, width, height).data
+    // brightness range across valid (non-zero) pixels, for normalization
+    let low = Infinity, high = -Infinity
+    for (let i = 0; i < source.length; i += 4) {
+      const gray = source[i]
+      if (gray > 0) { if (gray < low) { low = gray }; if (gray > high) { high = gray } }
+    }
+    const span = high > low ? high - low : 1
+    if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
+    if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
+    const destination = win.raw.data
+    for (let i = 0; i < source.length; i += 4) {
+      const gray = source[i]
+      if (!(gray > 0)) { destination[i] = 0; destination[i + 1] = 0; destination[i + 2] = 0; destination[i + 3] = 255; continue }
+      // brighter grayscale = nearer surface, so invert to keep near = hot (red)
+      const [r, g, b] = jetColor(1 - (gray - low) / span)
+      destination[i] = r; destination[i + 1] = g; destination[i + 2] = b; destination[i + 3] = 255
+    }
+    win.ctx.putImageData(win.raw, 0, 0)
+  }
+  image.src = `data:image/${(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"};base64,${payload.b64}`
+}
 function drawColorImage(win, payload) {
   if (payload.kind === "compressed") {
     const image = new Image()
@@ -1387,7 +1421,8 @@ function onFrame(payload) {
   const visible = !(entry && entry.on === false)
   win.el.style.display = visible ? "flex" : "none"
   if (!visible) { return }   // skip the decode work while hidden
-  if (depth && payload.kind !== "compressed") { drawDepthImage(win, payload) }
+  if (depth && payload.kind === "compressed") { drawCompressedDepth(win, payload) }
+  else if (depth) { drawDepthImage(win, payload) }
   else { drawColorImage(win, payload) }
 }
 
