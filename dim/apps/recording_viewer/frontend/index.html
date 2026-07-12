@@ -171,6 +171,16 @@
   .row .cust-btn .cb-hover { display: none; }
   .row .cust-btn:hover .cb-idle { display: none; }
   .row .cust-btn:hover .cb-hover { display: inline; }
+  .row .agg-btn { font: inherit; font-size: 13px; line-height: 1; color: var(--muted-fg); background: none; border: none;
+    border-radius: 999px; padding: 1px 5px; cursor: pointer; flex: none; }
+  .row .agg-btn:hover { color: var(--fg); background: var(--secondary); }
+  #agg-menu { position: absolute; z-index: 10; display: none; padding: 5px; min-width: 150px;
+    background: color-mix(in oklch, var(--card) 96%, transparent); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); }
+  #agg-menu button { display: block; width: 100%; text-align: left; font: inherit; font-size: 11.5px; color: var(--fg);
+    background: none; border: none; border-radius: var(--radius-sm); padding: 6px 8px; cursor: pointer; }
+  #agg-menu button:hover { background: var(--secondary); }
+  #agg-menu button:disabled { color: var(--muted-fg); cursor: default; background: none; }
   #cust-panel { position: absolute; z-index: 9; display: none; padding: 9px; min-width: 158px;
     background: color-mix(in oklch, var(--card) 96%, transparent); border: 1px solid var(--border);
     border-radius: var(--radius); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); }
@@ -256,6 +266,10 @@
   <div class="cp-row"><span>Max range</span><select id="cp-range"><option value="0">none</option><option value="3">3&nbsp;m</option><option value="5">5&nbsp;m</option><option value="10">10&nbsp;m</option><option value="20">20&nbsp;m</option><option value="50">50&nbsp;m</option></select></div>
   <div class="cp-row"><span>Z min</span><input type="number" id="cp-zmin" class="cp-num" step="0.1" placeholder="—"></div>
   <div class="cp-row"><span>Z max</span><input type="number" id="cp-zmax" class="cp-num" step="0.1" placeholder="—"></div>
+</div>
+
+<div id="agg-menu">
+  <button id="agg-run">Aggregate pointcloud</button>
 </div>
 
 <div class="transport hidden" id="transport">
@@ -568,10 +582,47 @@ function openCustPanel(name, button) {
   custPanel.style.top = `${Math.max(8, top)}px`
 }
 document.getElementById("stream-list").addEventListener("click", (event) => {
-  const button = event.target.closest(".cust-btn"); if (!button) { return }
-  event.preventDefault()
-  openCustPanel(decodeURIComponent(button.dataset.cust), button)
+  const custButton = event.target.closest(".cust-btn")
+  if (custButton) {
+    event.preventDefault()
+    openCustPanel(decodeURIComponent(custButton.dataset.cust), custButton)
+    return
+  }
+  const aggButton = event.target.closest(".agg-btn")
+  if (aggButton) {
+    event.preventDefault()
+    openAggMenu(decodeURIComponent(aggButton.dataset.agg), aggButton)
+  }
 })
+// ── aggregate menu (⋯ on lidar rows) ──
+const aggMenu = document.getElementById("agg-menu")
+const aggRunBtn = document.getElementById("agg-run")
+let aggMenuStream = null
+let aggregating = false
+function hideAggMenu() { aggMenu.style.display = "none"; aggMenuStream = null }
+function openAggMenu(name, button) {
+  aggMenuStream = name
+  aggRunBtn.disabled = aggregating
+  aggRunBtn.textContent = aggregating ? "Aggregating…" : "Aggregate pointcloud"
+  aggMenu.style.display = "block"
+  const rect = button.getBoundingClientRect()
+  const width = aggMenu.offsetWidth, height = aggMenu.offsetHeight
+  const left = Math.min(rect.left, innerWidth - width - 8)
+  const top = rect.bottom + height + 8 > innerHeight ? rect.top - height - 6 : rect.bottom + 6
+  aggMenu.style.left = `${Math.max(8, left)}px`
+  aggMenu.style.top = `${Math.max(8, top)}px`
+}
+aggRunBtn.addEventListener("click", () => {
+  if (!aggMenuStream || aggregating) { return }
+  aggregating = true
+  app.send("aggregate", { stream: aggMenuStream })
+  setStatus("loading", `aggregating ${aggMenuStream.split("#")[0]}…`)
+  hideAggMenu()
+})
+// Dismiss the menu on any outside click.
+document.addEventListener("click", (event) => {
+  if (aggMenu.style.display === "block" && !aggMenu.contains(event.target) && !event.target.closest(".agg-btn")) { hideAggMenu() }
+}, true)
 // Apply on "change" (commit), not "input": the native color pickers fire "input"
 // continuously while dragging, and recoloring every accumulated frame per tick chugs.
 // "change" fires once the user settles on a color (and on select/number commit).
@@ -1522,7 +1573,8 @@ function refreshStreams() {
     if (entry.kind === "cloud") {
       control = `<button class="cust-btn" data-cust="${encodeURIComponent(name)}">` +
         `<span class="cb-idle">${entry.voxel ? "voxels" : "lidar"}</span><span class="cb-hover">customize</span></button>` +
-        accumSelect
+        accumSelect +
+        (name.split("#")[0].endsWith("_aggregated") ? "" : `<button class="agg-btn" data-agg="${encodeURIComponent(name)}" title="More">⋯</button>`)
     } else if (entry.kind === "odom") {
       control = `<span class="tag kc-odom">odom</span>` + accumSelect
     } else {
@@ -1734,6 +1786,20 @@ app.receiveRequest((kind, payload) => {
   else if (kind === "tf") { for (const transform of payload.transforms || []) { setTf(transform.parent, transform.child, transform.t, transform.q) } }
   else if (kind === "path") { onPath(payload) }
   else if (kind === "frame") { onFrame(payload) }
+  else if (kind === "aggregateProgress") {
+    const label = payload.phase === "voxelizing" ? "voxelizing map…"
+      : payload.phase === "reloading" ? "reloading…"
+      : `aggregating ${payload.stream.split("#")[0]}… ${payload.done}/${payload.total}`
+    setStatus("loading", label)
+  }
+  else if (kind === "aggregateDone") {
+    aggregating = false
+    setStatus("ready", `${payload.aggregated.split("#")[0]}: ${payload.points.toLocaleString()} pts`)
+  }
+  else if (kind === "aggregateError") {
+    aggregating = false
+    setStatus("error", "aggregate failed: " + (payload.message || ""))
+  }
   else if (kind === "error") { setStatus("error", payload.message); overlay.classList.remove("hidden") }
   else if (kind === "pickCancelled") { setStatus(known.size ? "ready" : "idle") }
 })

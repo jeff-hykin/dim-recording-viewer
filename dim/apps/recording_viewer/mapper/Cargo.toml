@@ -1,0 +1,16 @@
+[package]
+name = "mapper"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mapper"
+path = "src/main.rs"
+
+[dependencies]
+lcm-msgs = { git = "https://github.com/dimensionalOS/dimos-lcm.git", branch = "rust-codegen" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3

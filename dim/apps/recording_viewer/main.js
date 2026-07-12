@@ -29,6 +29,7 @@ const RECORDING_ROOTS = [
 ]
 
 const MAX_PTS = 24000   // per-cloud downsample cap (matches live viewer)
+const AGG_RENDER_CAP = 1_000_000   // aggregated maps are a single static cloud; allow far more points
 
 const KIND_NAMES = ["cloud", "odom", "tf", "path", "image"]
 const KIND_CODES = { cloud: 0, odom: 1, tf: 2, path: 3, image: 4 }
@@ -108,7 +109,7 @@ function kindOfMessage(message) {
     return null
 }
 
-function parseCloud(message) {
+function parseCloud(message, maxPts = MAX_PTS) {
     const fields = message.fields || []
     const fieldX = fields.find((field) => field.name === "x")
     const fieldY = fields.find((field) => field.name === "y")
@@ -130,7 +131,7 @@ function parseCloud(message) {
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
     const littleEndian = !message.is_bigendian
     const read = (offset, datatype) => (datatype === 8 ? view.getFloat64(offset, littleEndian) : view.getFloat32(offset, littleEndian))
-    const stride = Math.max(1, Math.ceil(total / MAX_PTS))
+    const stride = Math.max(1, Math.ceil(total / maxPts))
     const out = new Float32Array(Math.ceil(total / stride) * 3)
     let kept = 0
     for (let i = 0; i < total; i += stride) {
@@ -168,7 +169,7 @@ function parsePath(message) {
 // Turn one decoded message into the frontend frame for its kind.
 function frameForMessage(streamName, kind, message) {
     if (kind === "cloud") {
-        const cloud = parseCloud(message)
+        const cloud = parseCloud(message, streamName.split("#")[0].endsWith("_aggregated") ? AGG_RENDER_CAP : MAX_PTS)
         if (cloud) {
             return ["cloud", { stream: streamName, frame: frameId(message), n: cloud.n, b64: cloud.b64 }]
         }
@@ -692,6 +693,88 @@ function selectCloudCursors(streamIndex, cursors, clamped) {
     return withinWindow.slice(-CLOUD_SEEK_CAP)
 }
 
+// ── lidar map aggregation ─────────────────────────────────────────────────────
+// Accumulate every scan of a cloud stream into one world-frame map (dimos "map
+// global"). The whole pipeline — SQLite read, LCM decode/encode, world transform,
+// and voxel dedup — lives in the Rust mapper (mapper/, run via `nix run`, using the
+// same lcm-msgs codec dimos uses). It opens the recording, aggregates, and writes
+// the new "<name>_aggregated" PointCloud2 stream back in place. This side just
+// launches it and forwards the JSON progress it prints.
+
+const MAPPER_DIR = new URL("./mapper", import.meta.url).pathname
+const AGG_VOXEL = 0.05                          // voxel edge (m), matches dimos --voxel
+
+async function aggregateStream(streamName) {
+    if (!playback.db || !playback.path) {
+        dimApp.send("aggregateError", { stream: streamName, message: "No recording open" })
+        return
+    }
+    const aggregatedName = `${streamName}_aggregated`
+
+    // Spawn the Rust mapper via `nix run`. path: reads the flake dir directly (no
+    // git-tracking requirement); it stays cached after the first build.
+    let child
+    try {
+        child = new Deno.Command("nix", {
+            args: [
+                "run", `path:${MAPPER_DIR}`, "--",
+                "--db", playback.path,
+                "--stream", streamName,
+                "--voxel", String(AGG_VOXEL),
+            ],
+            stdout: "piped",
+            stderr: "piped",
+        }).spawn()
+    } catch (spawnError) {
+        dimApp.send("aggregateError", { stream: streamName, message: `Could not launch mapper: ${spawnError.message}` })
+        return
+    }
+    dimApp.send("aggregateProgress", { stream: streamName, phase: "scanning", done: 0, total: 0 })
+
+    // Forward the mapper's newline-delimited JSON progress as it streams.
+    const stderrPromise = new Response(child.stderr).text()
+    let donePayload = null
+    let buffered = ""
+    for await (const chunk of child.stdout.pipeThrough(new TextDecoderStream())) {
+        buffered += chunk
+        let newline
+        while ((newline = buffered.indexOf("\n")) >= 0) {
+            const line = buffered.slice(0, newline).trim()
+            buffered = buffered.slice(newline + 1)
+            if (!line) {
+                continue
+            }
+            let event
+            try {
+                event = JSON.parse(line)
+            } catch {
+                continue
+            }
+            if (event.phase === "scanning") {
+                dimApp.send("aggregateProgress", { stream: streamName, phase: "scanning", done: event.done || 0, total: event.total || 0 })
+            } else if (event.phase === "writing") {
+                dimApp.send("aggregateProgress", { stream: streamName, phase: "voxelizing", done: 0, total: 0 })
+            } else if (event.phase === "done") {
+                donePayload = event
+            } else if (event.phase === "error") {
+                dimApp.send("aggregateError", { stream: streamName, message: event.message || "mapper error" })
+            }
+        }
+    }
+
+    const status = await child.status
+    const stderrText = await stderrPromise
+    if (!status.success || !donePayload) {
+        dimApp.send("aggregateError", { stream: streamName, message: `Mapper failed: ${stderrText.slice(-400) || "no output"}` })
+        return
+    }
+
+    dimApp.send("aggregateProgress", { stream: streamName, phase: "reloading", done: 0, total: 0 })
+    dimApp.send("aggregateDone", { stream: streamName, aggregated: donePayload.aggregated || aggregatedName, points: donePayload.points || 0 })
+    // Reopen so the new stream appears in the list, timeline, and viewer.
+    await openRecording(playback.path)
+}
+
 // ── app bus ─────────────────────────────────────────────────────────────────
 dimApp.onReceive(async (kind, payload) => {
     if (kind === "hello") {
@@ -732,6 +815,10 @@ dimApp.onReceive(async (kind, payload) => {
         // Per-stream cloud accumulation policy; consulted by seekTo when rebuilding.
         if (payload?.stream) {
             playback.accumConfig.set(String(payload.stream), String(payload.mode || "latest"))
+        }
+    } else if (kind === "aggregate") {
+        if (payload?.stream) {
+            await aggregateStream(String(payload.stream))
         }
     } else if (kind === "close") {
         closeRecording()
