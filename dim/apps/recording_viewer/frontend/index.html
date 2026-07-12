@@ -209,7 +209,8 @@
   <span class="title">Recording&nbsp;Viewer</span>
   <span class="sub" id="loaded-name">· no recording</span>
   <span class="spacer"></span>
-  <button class="btn" id="fit-top">Fit view</button>
+  <button class="btn" id="top-view" title="Bird's-eye: look straight down on the whole map">Top-down</button>
+  <button class="btn" id="fit-top" title="Auto-fit the camera to frame the whole scene">Fit view</button>
   <button class="btn" id="browse-top">Open…</button>
   <span class="pill" id="pill"><span class="dot" id="dot"></span><span id="stat">idle</span></span>
 </div>
@@ -715,6 +716,21 @@ function fitView() {
   camera.far = Math.max(distance * 30, 5000); camera.near = Math.max(0.05, distance / 800); camera.updateProjectionMatrix()
 }
 document.getElementById("fit-top").addEventListener("click", () => { userMovedCamera = false; fitView() })
+// Bird's-eye: hover the camera almost straight over the scene center looking down, so
+// the whole map reads as a 2D floor plan. A tiny south offset keeps the fly-cam's
+// world-Z-up stable (a true nadir view is degenerate with an up vector along Z).
+function birdsEyeView() {
+  const box = sceneBounds()
+  if (box.isEmpty()) { return }
+  const center = box.getCenter(new THREE.Vector3())
+  const size = box.getSize(new THREE.Vector3())
+  const horizontal = Math.max(size.x, size.y, 1)
+  const distance = (horizontal * 0.5 / Math.tan((camera.fov * Math.PI / 180) / 2)) * 1.25
+  const position = new THREE.Vector3(center.x, center.y - horizontal * 0.02, center.z + distance)
+  setLookFrom(position, center)
+  camera.far = Math.max(distance * 30, 5000); camera.near = Math.max(0.05, distance / 800); camera.updateProjectionMatrix()
+}
+document.getElementById("top-view").addEventListener("click", () => { userMovedCamera = true; birdsEyeView() })
 
 // ── top-slice: two global clipping planes (world Z-up) that hide everything above
 // the top handle and below the bottom handle, so you can lift off a roof. Handle
@@ -837,6 +853,7 @@ const camposEl = document.getElementById("campos")
 
 // ── TF tree: child -> { parent, matrix(T_parent_child) } ──
 const tf = new Map()
+const tfParents = new Set()   // frames that appear as a tf parent (tree roots are global)
 const tmpVector = new THREE.Vector3(), tmpQuat = new THREE.Quaternion()
 function setTf(parent, child, translation, rotation) {
   const matrix = new THREE.Matrix4().compose(
@@ -844,6 +861,7 @@ function setTf(parent, child, translation, rotation) {
     tmpQuat.set(rotation[0], rotation[1], rotation[2], rotation[3]),
     { x: 1, y: 1, z: 1 })
   tf.set(child, { parent, matrix })
+  tfParents.add(parent)
 }
 function worldMatrix(frame) {
   const chain = []
@@ -852,6 +870,15 @@ function worldMatrix(frame) {
   const matrix = new THREE.Matrix4()
   for (let i = chain.length - 1; i >= 0; i--) { matrix.multiply(chain[i]) }
   return matrix
+}
+// A global (fixed) frame carries data already in world coordinates, so it maps to
+// the world with identity — NOT anchored to the robot pose. This catches both the
+// named world frames and any tf root (a frame that is only ever a tf parent), so a
+// cloud stored in "world"/"odom" isn't re-shifted by the odometry pose on top of its
+// already-global coords (which would fling it off, detached from the trajectory).
+const GLOBAL_FRAME_NAMES = /^(world|map|odom|earth|global)$/i
+function isGlobalFrame(frame) {
+  return GLOBAL_FRAME_NAMES.test(frame) || (tfParents.has(frame) && !tf.has(frame))
 }
 
 function b64ToBuffer(b64) {
@@ -1092,10 +1119,14 @@ function onCloud(payload) {
   const rawXyz = new Float32Array(b64ToBuffer(payload.b64))
   const points = new THREE.Points(new THREE.BufferGeometry(), cloud.material)
   points.matrixAutoUpdate = false
-  // Anchor by tf when the cloud's frame resolves; otherwise ride the robot's latest
-  // odometry pose so accumulated (sensor-frame) scans lay down a map instead of
-  // stacking at the origin.
+  // Placement, in priority order:
+  //  1. tf resolves the frame  -> use the tf chain (sensor-frame scan → world).
+  //  2. global/world frame      -> identity; the points are ALREADY in world coords,
+  //     so anchoring them to the robot pose would double-transform them off the map.
+  //  3. unresolved sensor frame -> ride the robot's latest odom pose so accumulated
+  //     sensor-frame scans lay down a map instead of stacking at the origin.
   if (tf.has(payload.frame)) { points.matrix.copy(worldMatrix(payload.frame)) }
+  else if (isGlobalFrame(payload.frame)) { points.matrix.identity() }
   else if (lastOdomWorld) { points.matrix.copy(lastOdomWorld) }
   else { points.matrix.identity() }
   cloud.group.add(points)
@@ -1439,6 +1470,7 @@ function clearScene() {
   for (const path of paths.values()) { scene.remove(path.line); path.geom.dispose() }
   paths.clear()
   tf.clear()
+  tfParents.clear()
   lastOdomWorld = null
 }
 
