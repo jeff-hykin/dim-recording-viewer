@@ -115,12 +115,26 @@
   #help { position: absolute; bottom: 68px; left: 16px; z-index: 4; color: var(--muted-fg); opacity: 0.6;
     font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; user-select: none; }
 
-  .cam { position: absolute; top: 60px; right: 14px; z-index: 4; width: 260px;
+  /* Floating image windows layer: spans the view but only the windows catch pointer
+     events, so dragging empty space still orbits the 3D scene. */
+  #cam-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+  .cam-win { position: absolute; pointer-events: auto; display: flex; flex-direction: column;
+    width: 280px; height: 210px; min-width: 140px; min-height: 116px; resize: both; overflow: hidden;
     border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
-    background: color-mix(in oklch, var(--card) 90%, transparent); overflow: hidden; display: none; backdrop-filter: blur(10px); }
-  .cam .cam-head { font-size: 9px; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--muted-fg);
-    padding: 7px 11px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; font-weight: 700; }
-  .cam canvas { display: block; width: 100%; background: oklch(0.14 0.015 258); }
+    background: color-mix(in oklch, var(--card) 90%, transparent); backdrop-filter: blur(10px); }
+  .cam-win .cam-head { flex: 0 0 auto; font-size: 9px; letter-spacing: var(--track-label); text-transform: uppercase;
+    color: var(--muted-fg); padding: 6px 9px; border-bottom: 1px solid var(--border); cursor: move;
+    display: flex; align-items: center; gap: 7px; font-weight: 700; }
+  .cam-win .cam-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cam-win .cam-badge { flex: 0 0 auto; font-size: 8px; padding: 1px 5px; border-radius: 999px;
+    background: color-mix(in oklch, var(--kc, var(--muted-fg)) 26%, transparent); color: var(--fg); }
+  .cam-win .cam-close { flex: 0 0 auto; cursor: pointer; color: var(--muted-fg); background: none; border: none;
+    font: inherit; font-size: 13px; line-height: 1; padding: 0 2px; }
+  .cam-win .cam-close:hover { color: var(--fg); }
+  .cam-win .cam-body { flex: 1 1 auto; min-height: 0; background: oklch(0.14 0.015 258); }
+  .cam-win canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .cam-win.collapsed { height: auto !important; min-height: 0; resize: none; }
+  .cam-win.collapsed .cam-body { display: none; }
 
   #ctxmenu { position: absolute; z-index: 9; min-width: 156px; display: none; padding: 4px;
     background: color-mix(in oklch, var(--card) 96%, transparent); border: 1px solid var(--border);
@@ -134,6 +148,22 @@
     border-radius: var(--radius); box-shadow: var(--shadow-md); backdrop-filter: blur(10px); }
   #marker-coords .mc-label { display: block; margin-bottom: 3px; color: var(--muted-fg); font-size: 9px;
     text-transform: uppercase; letter-spacing: var(--track-label); }
+  /* top-slice: double-ended vertical z clip on the right edge */
+  #zslice { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); z-index: 5;
+    display: flex; flex-direction: column; align-items: center; gap: 8px; user-select: none; }
+  #zslice-label { font: inherit; font-size: 9px; color: var(--muted-fg); text-transform: uppercase;
+    letter-spacing: var(--track-label); }
+  #zslice-track { position: relative; width: 10px; height: 42vh; border-radius: 999px;
+    background: color-mix(in oklch, var(--card) 88%, transparent); border: 1px solid var(--border);
+    box-shadow: var(--shadow-md); backdrop-filter: blur(10px); cursor: pointer; }
+  #zslice-fill { position: absolute; left: 0; right: 0; border-radius: 999px;
+    background: color-mix(in oklch, var(--primary) 45%, transparent); }
+  .zslice-thumb { position: absolute; left: 50%; width: 20px; height: 20px; border-radius: 50%;
+    transform: translate(-50%, -50%); background: var(--primary); border: 2px solid var(--card);
+    box-shadow: var(--shadow-md); cursor: grab; touch-action: none; }
+  .zslice-thumb:active { cursor: grabbing; }
+  #zslice-readout { font-family: var(--mono); font-size: 10px; color: var(--fg); letter-spacing: 0.03em;
+    min-height: 13px; text-align: center; }
   .row .cust-btn { font: inherit; font-size: 8.5px; font-weight: 700; letter-spacing: 0.06em;
     text-transform: uppercase; color: var(--secondary-fg); background: var(--secondary); border: none;
     border-radius: 999px; padding: 3px 9px; cursor: pointer; flex: none; display: inline-flex; align-items: center; gap: 5px; }
@@ -192,14 +222,22 @@
   <div id="stream-list"><div class="empty">none yet</div></div>
 </div>
 
-<div class="cam" id="cam">
-  <div class="cam-head" id="cam-head">Camera</div>
-  <canvas id="cam-canvas" width="320" height="180"></canvas>
+<div id="cam-layer"></div>
+
+<div id="zslice" title="Top slice: drag the handles to clip everything above/below a height (cut away a roof)">
+  <span id="zslice-label">Z slice</span>
+  <div id="zslice-track">
+    <div id="zslice-fill"></div>
+    <div id="zslice-thumb-top" class="zslice-thumb"></div>
+    <div id="zslice-thumb-bot" class="zslice-thumb"></div>
+  </div>
+  <span id="zslice-readout"></span>
 </div>
 
 <div id="help">WASD MOVE · Q/E DOWN/UP · DRAG LOOK · SCROLL DOLLY · RIGHT-DRAG PAN · RIGHT-CLICK MARKER · DBLCLICK RECENTER<span id="campos"></span></div>
 
 <div id="ctxmenu">
+  <button id="ctx-move">Move this marker</button>
   <button id="ctx-place">Place marker here</button>
   <button id="ctx-clear">Clear markers</button>
 </div>
@@ -341,6 +379,10 @@ window.addEventListener("blur", () => heldKeys.clear())
 let dragButton = -1   // 0 = look, 2 = pan
 let rightDragDist = 0   // right-button travel; a real pan suppresses the marker menu
 renderer.domElement.addEventListener("pointerdown", (event) => {
+  if (movingMarker) {   // a left-click while repositioning drops the marker where it sits
+    if (event.button === 0) { event.preventDefault(); commitMovingMarker(); return }
+    if (event.button === 2) { event.preventDefault(); cancelMovingMarker(); return }
+  }
   dragButton = event.button; userMovedCamera = true
   if (event.button === 2) { rightDragDist = 0 }
   renderer.domElement.setPointerCapture(event.pointerId)
@@ -367,7 +409,10 @@ renderer.domElement.addEventListener("pointermove", (event) => {
 renderer.domElement.addEventListener("contextmenu", (event) => {
   event.preventDefault()
   if (rightDragDist > 6) { return }
+  if (movingMarker) { return }   // right-click already handled as a move-cancel
   ctxClientX = event.clientX; ctxClientY = event.clientY
+  ctxMenuMarker = pickMarkerAt(event.clientX, event.clientY)
+  document.getElementById("ctx-move").style.display = ctxMenuMarker ? "block" : "none"
   ctxMenu.style.left = event.clientX + "px"; ctxMenu.style.top = event.clientY + "px"
   ctxMenu.style.display = "block"
 })
@@ -427,11 +472,61 @@ function clearMarkers() {
   }
   markerCoordsBox.style.display = "none"
 }
+// ── move an existing marker: right-click one, pick "Move", then it follows the
+// cursor across the floor until a left-click drops it (right-click / Esc cancels) ──
+let movingMarker = null
+let movingMarkerOrigin = null
+function pickMarkerAt(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect()
+  const ndc = new THREE.Vector2(
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -((clientY - rect.top) / rect.height) * 2 + 1)
+  raycaster.setFromCamera(ndc, camera)
+  const hits = raycaster.intersectObjects(markerGroup.children, true)
+  if (hits.length) {
+    let object = hits[0].object
+    while (object.parent && object.parent !== markerGroup) { object = object.parent }
+    return object
+  }
+  // fallback: a marker's thin geometry can be missed, so also grab the nearest
+  // pin within a small radius of where the cursor ray meets the floor.
+  const point = floorPointFromScreen(clientX, clientY)
+  if (!point) { return null }
+  let nearest = null, nearestDist = 0.45
+  for (const marker of markerGroup.children) {
+    const dist = Math.hypot(marker.position.x - point.x, marker.position.y - point.y)
+    if (dist < nearestDist) { nearestDist = dist; nearest = marker }
+  }
+  return nearest
+}
+function startMovingMarker(marker) {
+  movingMarker = marker
+  movingMarkerOrigin = marker.position.clone()
+  renderer.domElement.style.cursor = "grabbing"
+  markerCoordsBox.style.display = "block"
+}
+function commitMovingMarker() {
+  movingMarker = null; movingMarkerOrigin = null
+  renderer.domElement.style.cursor = ""
+}
+function cancelMovingMarker() {
+  if (movingMarker && movingMarkerOrigin) { movingMarker.position.copy(movingMarkerOrigin) }
+  commitMovingMarker()
+}
+renderer.domElement.addEventListener("pointermove", (event) => {
+  if (!movingMarker) { return }
+  const point = floorPointFromScreen(event.clientX, event.clientY)
+  if (!point) { return }
+  movingMarker.position.set(point.x, point.y, 0)
+  markerCoordsVal.textContent = `x ${point.x.toFixed(2)}   y ${point.y.toFixed(2)}   z 0.00`
+})
 function hideCtxMenu() { ctxMenu.style.display = "none" }
+let ctxMenuMarker = null
+document.getElementById("ctx-move").addEventListener("click", () => { if (ctxMenuMarker) { startMovingMarker(ctxMenuMarker) }; hideCtxMenu() })
 document.getElementById("ctx-place").addEventListener("click", () => { placeMarker(ctxClientX, ctxClientY); hideCtxMenu() })
 document.getElementById("ctx-clear").addEventListener("click", () => { clearMarkers(); hideCtxMenu() })
 window.addEventListener("pointerdown", (event) => { if (!ctxMenu.contains(event.target)) { hideCtxMenu() } }, true)
-window.addEventListener("keydown", (event) => { if (event.code === "Escape") { hideCtxMenu() } })
+window.addEventListener("keydown", (event) => { if (event.code === "Escape") { hideCtxMenu(); cancelMovingMarker() } })
 
 // ── per-cloud customize popup (start color / end color / gradient axis) ──
 const custPanel = document.getElementById("cust-panel")
@@ -620,6 +715,106 @@ function fitView() {
   camera.far = Math.max(distance * 30, 5000); camera.near = Math.max(0.05, distance / 800); camera.updateProjectionMatrix()
 }
 document.getElementById("fit-top").addEventListener("click", () => { userMovedCamera = false; fitView() })
+
+// ── top-slice: two global clipping planes (world Z-up) that hide everything above
+// the top handle and below the bottom handle, so you can lift off a roof. Handle
+// fractions run 0 (bottom of the scene) .. 1 (top); wide-open = clipping off. ──
+const zClipTopPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)
+const zClipBottomPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
+let zSliceTopFraction = 1, zSliceBottomFraction = 0
+const zSliceTrack = document.getElementById("zslice-track")
+const zSliceFill = document.getElementById("zslice-fill")
+const zSliceThumbTop = document.getElementById("zslice-thumb-top")
+const zSliceThumbBottom = document.getElementById("zslice-thumb-bot")
+const zSliceReadout = document.getElementById("zslice-readout")
+function zSceneExtent() {
+  // World-space min/max Z across whatever is currently drawn (clouds + trajectory).
+  let low = Infinity, high = -Infinity
+  clouds.forEach((cloud) => {
+    if (!cloud.group.visible) { return }
+    for (const frame of cloud.frames) {
+      frame.geom.computeBoundingBox()
+      if (!frame.geom.boundingBox) { continue }
+      fitTmp.copy(frame.geom.boundingBox).applyMatrix4(frame.points.matrix)
+      if (fitTmp.min.z < low) { low = fitTmp.min.z }
+      if (fitTmp.max.z > high) { high = fitTmp.max.z }
+    }
+  })
+  odoms.forEach((odom) => {
+    if (!odom.trail.visible || !odom.count) { return }
+    const array = odom.geom.getAttribute("position").array
+    for (let i = 0; i < odom.count; i++) {
+      const z = array[i * 3 + 2]
+      if (z < low) { low = z }
+      if (z > high) { high = z }
+    }
+  })
+  if (!isFinite(low) || !isFinite(high) || high - low < 0.1) { return [0, 3] }
+  const pad = (high - low) * 0.04
+  return [low - pad, high + pad]
+}
+let zSliceExtentCache = null   // recomputed at drag-start; reused for the drag's duration
+function applyZSlice() {
+  const topActive = zSliceTopFraction < 0.999
+  const bottomActive = zSliceBottomFraction > 0.001
+  let zTop = 0, zBottom = 0
+  if (topActive || bottomActive) {   // only touch the (later-defined) scene maps when actually clipping
+    const [low, high] = zSliceExtentCache ?? zSceneExtent()
+    const span = high - low
+    zTop = low + zSliceTopFraction * span
+    zBottom = low + zSliceBottomFraction * span
+  }
+  const planes = []
+  if (topActive) { zClipTopPlane.constant = zTop; planes.push(zClipTopPlane) }
+  if (bottomActive) { zClipBottomPlane.constant = -zBottom; planes.push(zClipBottomPlane) }
+  renderer.clippingPlanes = planes
+  // handle + fill positions (0 = bottom of track, so top handle sits higher up)
+  zSliceThumbTop.style.top = `${(1 - zSliceTopFraction) * 100}%`
+  zSliceThumbBottom.style.top = `${(1 - zSliceBottomFraction) * 100}%`
+  zSliceFill.style.top = `${(1 - zSliceTopFraction) * 100}%`
+  zSliceFill.style.height = `${(zSliceTopFraction - zSliceBottomFraction) * 100}%`
+  if (topActive || bottomActive) {
+    const shownTop = topActive ? `${zTop.toFixed(2)}` : "top"
+    const shownBottom = bottomActive ? `${zBottom.toFixed(2)}` : "flr"
+    zSliceReadout.textContent = `${shownBottom} – ${shownTop} m`
+  } else {
+    zSliceReadout.textContent = ""
+  }
+}
+let zSliceActiveThumb = null
+function zSliceFractionFromEvent(event) {
+  const rect = zSliceTrack.getBoundingClientRect()
+  return THREE.MathUtils.clamp(1 - (event.clientY - rect.top) / rect.height, 0, 1)
+}
+function zSliceStartDrag(thumb, event) {
+  event.preventDefault(); event.stopPropagation()
+  zSliceActiveThumb = thumb
+  zSliceExtentCache = zSceneExtent()
+  window.addEventListener("pointermove", zSliceOnDrag)
+  window.addEventListener("pointerup", zSliceEndDrag)
+}
+function zSliceOnDrag(event) {
+  if (!zSliceActiveThumb) { return }
+  const fraction = zSliceFractionFromEvent(event)
+  const gap = 0.02
+  if (zSliceActiveThumb === "top") {
+    zSliceTopFraction = Math.max(fraction, zSliceBottomFraction + gap)
+  } else {
+    zSliceBottomFraction = Math.min(fraction, zSliceTopFraction - gap)
+  }
+  applyZSlice()
+}
+function zSliceEndDrag() {
+  zSliceActiveThumb = null; zSliceExtentCache = null
+  window.removeEventListener("pointermove", zSliceOnDrag)
+  window.removeEventListener("pointerup", zSliceEndDrag)
+}
+zSliceThumbTop.addEventListener("pointerdown", (event) => zSliceStartDrag("top", event))
+zSliceThumbBottom.addEventListener("pointerdown", (event) => zSliceStartDrag("bottom", event))
+// double-click either handle to reset that end to fully open
+zSliceThumbTop.addEventListener("dblclick", () => { zSliceTopFraction = 1; applyZSlice() })
+zSliceThumbBottom.addEventListener("dblclick", () => { zSliceBottomFraction = 0; applyZSlice() })
+applyZSlice()
 
 // True while the backend is replaying a seek (between "reset" and its "time" ack).
 // The render loop skips drawing during this window so the viewer never shows the
@@ -1028,19 +1223,102 @@ function onPath(payload) {
   addStream(payload.stream, "path")
 }
 
-// ── camera PIP ──
-const camBox = document.getElementById("cam"), camHead = document.getElementById("cam-head")
-const camCanvas = document.getElementById("cam-canvas"), camCtx = camCanvas.getContext("2d")
-let camRaw = null
-function onFrame(payload) {
-  camBox.style.display = "block"
-  camHead.textContent = payload.stream.split("#")[0]
-  addStream(payload.stream, "image")
+// ── floating image windows (color_image / depth_image streams) ──
+// Each image stream pops up as its own draggable, resizable window over the 3D view.
+const camLayer = document.getElementById("cam-layer")
+const imageWindows = new Map()   // name -> { el, canvas, ctx, titleEl, badgeEl, raw }
+let camCascade = 0
+// Depth images carry per-pixel distance (uint16 mm or float32 m) rather than color, so
+// they're colorized with a jet ramp instead of shown as raw (near-black) grayscale.
+const DEPTH_ENCODINGS = new Set(["16uc1", "mono16", "16sc1", "32fc1"])
+function isDepthPayload(payload) {
+  const encoding = String(payload.encoding || "").toLowerCase()
+  return DEPTH_ENCODINGS.has(encoding) || /depth/i.test(payload.stream)
+}
+// Classic "jet" colormap: near (t≈0) → red, far (t≈1) → blue, so closer surfaces read hot.
+function jetColor(t) {
+  const value = 4 * clamp01(1 - t)
+  return [
+    Math.round(clamp01(Math.min(value - 1.5, -value + 4.5)) * 255),
+    Math.round(clamp01(Math.min(value - 0.5, -value + 3.5)) * 255),
+    Math.round(clamp01(Math.min(value + 0.5, -value + 2.5)) * 255),
+  ]
+}
+function saveWindowGeom(name, win) {
+  const entry = known.get(name); if (!entry) { return }
+  entry.winX = win.el.offsetLeft; entry.winY = win.el.offsetTop
+  entry.winW = win.el.offsetWidth; entry.winH = win.el.offsetHeight
+  saveStreamStyle(name, entry)
+}
+function toggleCamCollapse(name, win) {
+  const collapsed = !win.el.classList.contains("collapsed")
+  if (collapsed) {
+    win.expandedHeight = win.el.style.height || (win.el.offsetHeight + "px")
+    win.el.classList.add("collapsed"); win.el.style.height = ""
+  } else {
+    win.el.classList.remove("collapsed")
+    if (win.expandedHeight) { win.el.style.height = win.expandedHeight }
+  }
+  const entry = known.get(name)
+  if (entry) { entry.winCollapsed = collapsed; saveStreamStyle(name, entry) }
+}
+function ensureImageWindow(name) {
+  let win = imageWindows.get(name)
+  if (win) { return win }
+  const entry = known.get(name)
+  const el = document.createElement("div")
+  el.className = "cam-win"
+  el.innerHTML = '<div class="cam-head"><span class="cam-title"></span><span class="cam-badge"></span>' +
+    '<button class="cam-close" title="Hide">&times;</button></div><div class="cam-body"><canvas></canvas></div>'
+  el.querySelector(".cam-title").textContent = name.split("#")[0]
+  const canvas = el.querySelector("canvas")
+  if (Number.isFinite(entry?.winW)) { el.style.width = entry.winW + "px"; el.style.height = entry.winH + "px" }
+  if (Number.isFinite(entry?.winX)) { el.style.left = entry.winX + "px"; el.style.top = entry.winY + "px" }
+  else {
+    const offset = 18 * (camCascade++ % 6)
+    el.style.right = (14 + offset) + "px"; el.style.top = (60 + offset) + "px"
+  }
+  camLayer.appendChild(el)
+  win = { el, canvas, ctx: canvas.getContext("2d"), badgeEl: el.querySelector(".cam-badge"), raw: null }
+  imageWindows.set(name, win)
+  el.querySelector(".cam-close").addEventListener("click", (event) => {
+    event.stopPropagation()
+    const hidden = known.get(name); if (hidden) { hidden.on = false; saveStreamStyle(name, hidden) }
+    el.style.display = "none"; refreshStreams()
+  })
+  const head = el.querySelector(".cam-head")
+  head.addEventListener("pointerdown", (event) => {
+    if (event.target.closest(".cam-close")) { return }
+    event.preventDefault()
+    const rect = el.getBoundingClientRect(), parent = camLayer.getBoundingClientRect()
+    el.style.left = (rect.left - parent.left) + "px"; el.style.top = (rect.top - parent.top) + "px"; el.style.right = "auto"
+    const startX = event.clientX, startY = event.clientY, baseLeft = el.offsetLeft, baseTop = el.offsetTop
+    let dragged = false
+    head.setPointerCapture(event.pointerId)
+    const move = (moveEvent) => {
+      if (!dragged && Math.abs(moveEvent.clientX - startX) + Math.abs(moveEvent.clientY - startY) < 4) { return }
+      dragged = true   // a real move; anything under the threshold stays a click
+      const maxLeft = camLayer.clientWidth - 40, maxTop = camLayer.clientHeight - 24
+      el.style.left = Math.max(0, Math.min(maxLeft, baseLeft + moveEvent.clientX - startX)) + "px"
+      el.style.top = Math.max(0, Math.min(maxTop, baseTop + moveEvent.clientY - startY)) + "px"
+    }
+    const up = () => {
+      head.releasePointerCapture(event.pointerId); head.removeEventListener("pointermove", move); head.removeEventListener("pointerup", up)
+      if (dragged) { saveWindowGeom(name, win) } else { toggleCamCollapse(name, win) }
+    }
+    head.addEventListener("pointermove", move); head.addEventListener("pointerup", up)
+  })
+  if (entry?.winCollapsed) { win.el.classList.add("collapsed"); win.el.style.height = "" }
+  let resizeTimer = null
+  new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => saveWindowGeom(name, win), 250) }).observe(el)
+  return win
+}
+function drawColorImage(win, payload) {
   if (payload.kind === "compressed") {
     const image = new Image()
     image.onload = () => {
-      if (camCanvas.width !== image.width || camCanvas.height !== image.height) { camCanvas.width = image.width; camCanvas.height = image.height }
-      camCtx.drawImage(image, 0, 0)
+      if (win.canvas.width !== image.width || win.canvas.height !== image.height) { win.canvas.width = image.width; win.canvas.height = image.height; win.raw = null }
+      win.ctx.drawImage(image, 0, 0)
     }
     image.src = `data:image/${(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"};base64,${payload.b64}`
     return
@@ -1048,11 +1326,11 @@ function onFrame(payload) {
   const width = payload.width, height = payload.height; if (!width || !height) { return }
   const source = new Uint8Array(b64ToBuffer(payload.b64))
   const encoding = (payload.encoding || "rgb8").toLowerCase()
-  const channels = encoding === "rgba8" ? 4 : encoding === "mono8" ? 1 : 3
+  const channels = encoding === "rgba8" || encoding === "bgra8" ? 4 : encoding === "mono8" ? 1 : 3
   const step = payload.step || width * channels
-  if (camCanvas.width !== width || camCanvas.height !== height) { camCanvas.width = width; camCanvas.height = height; camRaw = null }
-  if (!camRaw) { camRaw = camCtx.createImageData(width, height) }
-  const destination = camRaw.data
+  if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
+  if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
+  const destination = win.raw.data
   const isBgr = encoding === "bgr8" || encoding === "bgra8"
   for (let y = 0; y < height; y++) {
     let sourceIndex = y * step, destIndex = y * width * 4
@@ -1065,7 +1343,52 @@ function onFrame(payload) {
       destIndex += 4
     }
   }
-  camCtx.putImageData(camRaw, 0, 0)
+  win.ctx.putImageData(win.raw, 0, 0)
+}
+function drawDepthImage(win, payload) {
+  const width = payload.width, height = payload.height; if (!width || !height) { return }
+  const buffer = b64ToBuffer(payload.b64)
+  const isFloat = String(payload.encoding || "").toLowerCase() === "32fc1"
+  const littleEndian = !payload.bigendian
+  const view = new DataView(buffer)
+  const bytesPerPixel = isFloat ? 4 : 2
+  const step = payload.step || width * bytesPerPixel
+  const readAt = (offset) => isFloat ? view.getFloat32(offset, littleEndian) : view.getUint16(offset, littleEndian)
+  // find the valid depth range (ignore zero / NaN = no return) for normalization
+  let low = Infinity, high = -Infinity
+  for (let y = 0; y < height; y++) {
+    let offset = y * step
+    for (let x = 0; x < width; x++, offset += bytesPerPixel) {
+      const value = readAt(offset)
+      if (value > 0 && Number.isFinite(value)) { if (value < low) { low = value }; if (value > high) { high = value } }
+    }
+  }
+  const span = high > low ? high - low : 1
+  if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
+  if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
+  const destination = win.raw.data
+  for (let y = 0; y < height; y++) {
+    let offset = y * step, destIndex = y * width * 4
+    for (let x = 0; x < width; x++, offset += bytesPerPixel, destIndex += 4) {
+      const value = readAt(offset)
+      if (!(value > 0) || !Number.isFinite(value)) { destination[destIndex] = 0; destination[destIndex + 1] = 0; destination[destIndex + 2] = 0; destination[destIndex + 3] = 255; continue }
+      const [r, g, b] = jetColor((value - low) / span)
+      destination[destIndex] = r; destination[destIndex + 1] = g; destination[destIndex + 2] = b; destination[destIndex + 3] = 255
+    }
+  }
+  win.ctx.putImageData(win.raw, 0, 0)
+}
+function onFrame(payload) {
+  addStream(payload.stream, "image")
+  const entry = known.get(payload.stream)
+  const win = ensureImageWindow(payload.stream)
+  const depth = isDepthPayload(payload)
+  win.badgeEl.textContent = depth ? "depth" : "color"
+  const visible = !(entry && entry.on === false)
+  win.el.style.display = visible ? "flex" : "none"
+  if (!visible) { return }   // skip the decode work while hidden
+  if (depth && payload.kind !== "compressed") { drawDepthImage(win, payload) }
+  else { drawColorImage(win, payload) }
 }
 
 // ── clear scene state (on load / seek reset) ──
@@ -1091,7 +1414,7 @@ const known = new Map()   // name -> { kind, on }
 // to localStorage so a reload restores it. Keyed by the base topic name (before any
 // "#" disambiguator) so the same sensor keeps its style across recordings too.
 const STYLE_STORAGE_KEY = "rv-stream-style:v1"
-const STYLE_KEYS = ["gradStart", "gradMid", "gradEnd", "axis", "voxel", "voxelSize", "downsample", "rangeMax", "zMin", "zMax", "accum", "on"]
+const STYLE_KEYS = ["gradStart", "gradMid", "gradEnd", "axis", "voxel", "voxelSize", "downsample", "rangeMax", "zMin", "zMax", "accum", "on", "winX", "winY", "winW", "winH", "winCollapsed"]
 const styleKeyFor = (name) => String(name).split("#")[0]
 function loadSavedStyles() {
     try { return JSON.parse(localStorage.getItem(STYLE_STORAGE_KEY) || "{}") || {} }
@@ -1114,6 +1437,7 @@ function setVisible(name, on) {
   const cloud = clouds.get(name); if (cloud) { cloud.group.visible = on }
   const odom = odoms.get(name); if (odom) { odom.group.visible = on; odom.trail.visible = on && (known.get(name)?.accum || "all") !== "latest" }
   const path = paths.get(name); if (path) { path.line.visible = on }
+  const win = imageWindows.get(name); if (win) { win.el.style.display = on ? "flex" : "none" }
 }
 function refreshStreams() {
   const list = document.getElementById("stream-list")
@@ -1318,7 +1642,7 @@ app.receiveRequest((kind, payload) => {
   if (kind === "recordings") { renderRecordings(payload.recordings) }
   else if (kind === "loading") { setStatus("loading", "opening " + (payload.name || "")) }
   else if (kind === "loaded") {
-    clearScene(); known.clear(); refreshStreams()
+    clearScene(); known.clear(); imageWindows.clear(); camLayer.replaceChildren(); camCascade = 0; refreshStreams()
     rebuilding = false
     userMovedCamera = false; fitDirty = true
     loadedName.textContent = "· " + (payload.name || payload.path || "")
