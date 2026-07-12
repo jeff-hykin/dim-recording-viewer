@@ -118,7 +118,12 @@ function parseCloud(message) {
         return null
     }
     const data = asBytes(message.data)
-    const total = Math.floor(data.byteLength / step)
+    // A truncated/corrupt blob can report more points (via width/point_step) than its
+    // bytes actually cover. Clamp the count so no field read runs past the buffer —
+    // otherwise a getFloatXX throws RangeError and aborts the whole seek replay.
+    const sizeOf = (field) => field.datatype === 8 ? 8 : 4
+    const maxFieldEnd = Math.max(fieldX.offset + sizeOf(fieldX), fieldY.offset + sizeOf(fieldY), fieldZ.offset + sizeOf(fieldZ))
+    const total = Math.max(0, Math.min(Math.floor(data.byteLength / step), Math.floor((data.byteLength - maxFieldEnd) / step) + 1))
     if (!total) {
         return null
     }
@@ -193,8 +198,18 @@ function frameForMessage(streamName, kind, message) {
         const path = parsePath(message)
         return ["path", { stream: streamName, frame: frameId(message), n: path.n, b64: path.b64 }]
     } else if (kind === "image") {
-        if (message.format !== undefined && message.width === undefined) {
-            return ["frame", { stream: streamName, kind: "compressed", format: String(message.format || "jpeg"), b64: toB64(asBytes(message.data)) }]
+        // A CompressedImage carries `format` and no width/height. But some recordings
+        // also store plain Image messages whose blob is already JPEG/PNG-encoded
+        // (codec_id "jpeg"): the type is Image (has width/height) yet `encoding` names
+        // the codec and `data` holds the compressed bytes. Both must take the compressed
+        // path — otherwise the frontend draws codec bytes as raw pixels (a garbled
+        // strip over black).
+        const encoding = String(message.encoding || "").toLowerCase()
+        const isCompressedImage = message.format !== undefined && message.width === undefined
+        const isEncodedBlob = encoding === "jpeg" || encoding === "jpg" || encoding === "png"
+        if (isCompressedImage || isEncodedBlob) {
+            const format = isCompressedImage ? String(message.format || "jpeg") : (encoding === "jpg" ? "jpeg" : encoding)
+            return ["frame", { stream: streamName, kind: "compressed", format, b64: toB64(asBytes(message.data)) }]
         }
         return ["frame", {
             stream: streamName,
@@ -552,36 +567,116 @@ function seekTo(targetTs) {
     }
     const clamped = Math.max(playback.t0, Math.min(playback.t1, targetTs))
     dimApp.send("reset", {})
-    // Pass 1: gather each cloud stream's cursors so we can pick the accumulation set.
+    // Pass 1: bucket every entry up to the target by kind. A long recording has
+    // hundreds of thousands of these; replaying them all as individual bus messages
+    // freezes the frontend, so each kind is thinned to what's actually needed:
+    //   clouds  → each stream's accumulation policy (selectCloudCursors)
+    //   images  → only the latest frame per stream (each is a full blob off disk)
+    //   odom    → subsampled trail (kept spacing stays under the frontend's TRAIL_JUMP)
+    //   tf      → collapsed to the current transform tree, sent as ONE message
     const cloudCursors = new Map()   // stream-index -> [sortedCursor, ...] up to target
+    const odomCursors = new Map()    // stream-index -> [sortedCursor, ...] up to target
+    const latestImage = new Map()    // stream-index -> last image sortedCursor up to target
+    const tfCursors = []             // every tf sortedCursor up to target (newest wins)
+    const bucket = (map, streamIndex, cursor) => {
+        let list = map.get(streamIndex)
+        if (!list) { list = []; map.set(streamIndex, list) }
+        list.push(cursor)
+    }
     let scan = 0
     while (scan < playback.count && playback.tsArray[playback.order[scan]] <= clamped) {
         const index = playback.order[scan]
-        if (playback.kindArray[index] === KIND_CODES.cloud) {
-            const streamIndex = playback.streamArray[index]
-            let list = cloudCursors.get(streamIndex)
-            if (!list) { list = []; cloudCursors.set(streamIndex, list) }
-            list.push(scan)
-        }
+        const kind = playback.kindArray[index]
+        const streamIndex = playback.streamArray[index]
+        if (kind === KIND_CODES.cloud) { bucket(cloudCursors, streamIndex, scan) }
+        else if (kind === KIND_CODES.odom) { bucket(odomCursors, streamIndex, scan) }
+        else if (kind === KIND_CODES.image) { latestImage.set(streamIndex, scan) }
+        else if (kind === KIND_CODES.tf) { tfCursors.push(scan) }
         scan++
     }
-    const keepClouds = new Set()
+    // Establish the current transform tree first (one message) so the odom/cloud
+    // frames that follow resolve against it.
+    emitConsolidatedTf(tfCursors)
+    const keep = new Set()
     for (const [streamIndex, cursors] of cloudCursors) {
         for (const sortedCursor of selectCloudCursors(streamIndex, cursors, clamped)) {
-            keepClouds.add(sortedCursor)
+            keep.add(sortedCursor)
         }
     }
-    // Pass 2: emit in timeline order — every non-cloud, plus the kept cloud frames.
+    for (const [, cursors] of odomCursors) {
+        for (const sortedCursor of subsampleCursors(cursors, ODOM_SEEK_CAP)) {
+            keep.add(sortedCursor)
+        }
+    }
+    for (const sortedCursor of latestImage.values()) { keep.add(sortedCursor) }
+    // Pass 2: emit the kept cloud/odom/image frames (+ any path) in timeline order.
+    // tf was already collapsed above, so its entries are skipped here.
     playback.cursor = 0
     while (playback.cursor < playback.count && playback.tsArray[playback.order[playback.cursor]] <= clamped) {
-        const isCloud = playback.kindArray[playback.order[playback.cursor]] === KIND_CODES.cloud
-        if (!isCloud || keepClouds.has(playback.cursor)) {
+        const kind = playback.kindArray[playback.order[playback.cursor]]
+        if (kind === KIND_CODES.tf) { /* already sent as the consolidated tree */ }
+        else if (kind === KIND_CODES.path || keep.has(playback.cursor)) {
             emitAt(playback.cursor)
         }
         playback.cursor++
     }
     playback.playhead = clamped
     sendTime()
+}
+
+// Collapse a tf history into the current transform tree — the newest transform per
+// child frame — and send it as a single "tf" message. The frontend's tf map is
+// latest-wins per child, so this reproduces the exact tree the full replay would build
+// without emitting tens of thousands of tf updates. Walks newest→oldest and stops once
+// the tree stops growing, so it also avoids decoding the whole tf history.
+function emitConsolidatedTf(tfCursors) {
+    if (!tfCursors.length) {
+        return
+    }
+    const edges = new Map()   // child -> { parent, t, q }
+    let sinceNew = 0
+    for (let i = tfCursors.length - 1; i >= 0 && sinceNew < 500; i--) {
+        const message = decodeAt(tfCursors[i])
+        let added = false
+        if (message && Array.isArray(message.transforms)) {
+            for (const transform of message.transforms) {
+                const child = transform.child_frame_id || ""
+                if (edges.has(child) || !transform.transform) { continue }
+                const translation = transform.transform.translation
+                const rotation = transform.transform.rotation
+                edges.set(child, {
+                    parent: transform?.header?.frame_id || "",
+                    t: [translation.x, translation.y, translation.z],
+                    q: [rotation.x, rotation.y, rotation.z, rotation.w],
+                })
+                added = true
+            }
+        }
+        sinceNew = added ? 0 : sinceNew + 1
+    }
+    const transforms = []
+    for (const [child, edge] of edges) {
+        transforms.push({ parent: edge.parent, child, t: edge.t, q: edge.q })
+    }
+    if (transforms.length) {
+        dimApp.send("tf", { transforms })
+    }
+}
+
+// Evenly thin a cursor list to at most `cap`, always keeping the last (so the current
+// pose — used for the robot body and cloud anchoring — is exact).
+const ODOM_SEEK_CAP = 4000   // max odom trail points re-emitted per stream on seek
+function subsampleCursors(cursors, cap) {
+    if (cursors.length <= cap) {
+        return cursors
+    }
+    const out = []
+    const stride = cursors.length / cap
+    for (let i = 0; i < cap - 1; i++) {
+        out.push(cursors[Math.floor(i * stride)])
+    }
+    out.push(cursors[cursors.length - 1])
+    return out
 }
 
 const CLOUD_SEEK_CAP = 240   // max cloud frames re-emitted per stream on seek (bounds cost)
