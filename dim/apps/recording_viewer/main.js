@@ -1,4 +1,4 @@
-// Recording Viewer — backend half. Renders a 3D scene from a RECORDED dimos
+// Mapper — backend half. Renders a 3D scene from a RECORDED dimos
 // "memory2" .db file (SQLite) instead of a live bridge. It opens a recording,
 // builds one merged timeline across every stream, decodes each message on demand
 // (@dimos/msgs), and forwards compact frames to the 3D frontend as a scrubbable
@@ -262,6 +262,46 @@ async function listRecordings() {
     found.sort((a, b) => b.mtime - a.mtime)
     return found
 }
+
+// Recently-opened recordings, persisted to disk so they survive restarts and show
+// files the user browsed to from anywhere (not just the scanned roots). Newest-opened
+// first, deduped by path, capped. (Mirrors the recently-opened list in dim-urdf-editor.)
+const RECENTS_FILE = `${HOME}/.local/share/dim/recording_viewer_recents.json`
+const RECENTS_CAP = 15
+async function loadRecents() {
+    try {
+        const list = JSON.parse(await Deno.readTextFile(RECENTS_FILE))
+        return Array.isArray(list) ? list : []
+    } catch {
+        return []   // no file yet / unreadable
+    }
+}
+async function recordRecent(path) {
+    const list = (await loadRecents()).filter((entry) => entry && entry.path !== path)
+    list.unshift({ path, openedAt: Date.now() })
+    try {
+        await Deno.mkdir(`${HOME}/.local/share/dim`, { recursive: true })
+        await Deno.writeTextFile(RECENTS_FILE, JSON.stringify(list.slice(0, RECENTS_CAP)))
+    } catch { /* best-effort: a missing recents file just means an empty list */ }
+}
+// Shape recents for the browser like scanned recordings, dropping any that have since
+// vanished. mtime carries openedAt so the frontend can sort/merge them at the top.
+async function recentRecordings() {
+    const out = []
+    for (const entry of await loadRecents()) {
+        if (!entry || !entry.path) { continue }
+        let size = 0
+        try {
+            const info = await Deno.stat(entry.path)
+            if (!info.isFile) { continue }
+            size = info.size
+        } catch {
+            continue   // opened file was moved/deleted — drop it from the list
+        }
+        out.push({ name: entry.path.split("/").pop(), label: entry.path.split("/").pop(), path: entry.path, size, mtime: entry.openedAt || 0, recent: true })
+    }
+    return out
+}
 // A dropped File in the webview is bytes-only (the SDK strips the path at
 // v0.3.0), and recordings are far too big to cross the app bus. The backend runs
 // as a full-permission Deno process, so it opens a native file dialog itself and
@@ -328,7 +368,7 @@ const playback = {
     cursor: 0,
     playhead: 0,
     playing: false,
-    speed: 4,
+    speed: 1,
     timer: null,
     lastTick: 0,
     accumConfig: new Map(),          // stream-name -> "latest" | "all" | window-seconds string
@@ -463,7 +503,8 @@ async function openRecording(nameOrPath) {
         t1: playback.t1,
         duration: playback.t1 - playback.t0,
     })
-    startPlaying()   // a dropped/opened recording immediately renders in 3D
+    seekTo(playback.t0)   // render the opening frame but stay paused until the user hits play
+    await recordRecent(path)   // remember it as recently-opened for next time
 }
 
 // Decode the message at sorted position `cursor` (blob read straight off disk).
@@ -778,7 +819,7 @@ async function aggregateStream(streamName) {
 // ── app bus ─────────────────────────────────────────────────────────────────
 dimApp.onReceive(async (kind, payload) => {
     if (kind === "hello") {
-        dimApp.send("recordings", { recordings: await listRecordings() })
+        dimApp.send("recordings", { recordings: await listRecordings(), recent: await recentRecordings() })
         if (playback.path) {
             dimApp.send("loaded", {
                 path: playback.path,
@@ -788,9 +829,14 @@ dimApp.onReceive(async (kind, payload) => {
                 t1: playback.t1,
                 duration: playback.t1 - playback.t0,
             })
+            // A webview refresh reconnects to this still-running backend with an empty
+            // scene. Rebuild the frame at the current playhead (clouds/image/tf/odom +
+            // the timestamp) so the reloaded page shows exactly what was on screen —
+            // no play/pause nudge needed.
+            seekTo(playback.playhead)
         }
     } else if (kind === "list") {
-        dimApp.send("recordings", { recordings: await listRecordings() })
+        dimApp.send("recordings", { recordings: await listRecordings(), recent: await recentRecordings() })
     } else if (kind === "open") {
         await openRecording(payload?.path || payload?.name || "")
     } else if (kind === "pickFile") {

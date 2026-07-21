@@ -21,7 +21,7 @@ Streams are discovered from the recording's `_streams` table and drawn by
 dim install https://github.com/jeff-hykin/dim-recording-viewer
 ```
 
-Open **Recording Viewer** from the desktop rail, then drop a `.db` file or click
+Open **Mapper** from the desktop rail, then drop a `.db` file or click
 **Browse**.
 
 ## How it works
