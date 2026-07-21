@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  Recording Viewer. A 3D scene rebuilt from a RECORDED dimos "memory2" .db file:
+  Mapper. A 3D scene rebuilt from a RECORDED dimos "memory2" .db file:
   drop (or browse to) a recording and it plays back in 3D — robot pose + trail
   (odometry), lidar/costmap point clouds placed via the TF tree, planned paths,
   and a camera PIP. A scrubbable timeline at the bottom drives the playhead.
@@ -11,7 +11,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Recording Viewer · DimOS</title>
+<title>Mapper · DimOS</title>
 <link rel="stylesheet" href="/assets/theme.css" />
 <style>
   html, body { height: 100%; margin: 0; overflow: hidden; font-family: var(--sans); }
@@ -166,7 +166,8 @@
     min-height: 13px; text-align: center; }
   .row .cust-btn { font: inherit; font-size: 8.5px; font-weight: 700; letter-spacing: 0.06em;
     text-transform: uppercase; color: var(--secondary-fg); background: var(--secondary); border: none;
-    border-radius: 999px; padding: 3px 9px; cursor: pointer; flex: none; display: inline-flex; align-items: center; gap: 5px; }
+    border-radius: 999px; padding: 3px 9px; cursor: pointer; flex: none; display: inline-flex; align-items: center;
+    justify-content: center; gap: 5px; min-width: 92px; }
   .row .cust-btn::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: oklch(0.72 0.13 210); }
   .row .cust-btn .cb-hover { display: none; }
   .row .cust-btn:hover .cb-idle { display: none; }
@@ -188,7 +189,8 @@
     text-transform: uppercase; letter-spacing: var(--track-label); font-family: var(--mono);
     max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #cust-panel .cp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 3px 1px; font-size: 11px; color: var(--fg); }
-  #cust-panel .cp-row > span { color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.05em; font-size: 9px; }
+  #cust-panel .cp-row > span { color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.05em; font-size: 9px; white-space: nowrap; }
+  #cust-panel .cp-hint { margin: 2px 1px 0; font-size: 9px; color: var(--info); font-style: italic; }
   #cust-panel input[type=color] { width: 42px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
   #cust-panel input.cp-hue { -webkit-appearance: none; appearance: none; width: 104px; height: 12px; margin: 0;
     border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
@@ -259,9 +261,14 @@
   <div class="cp-row"><span>Mid</span><input type="range" min="0" max="359" id="cp-mid" class="cp-hue"></div>
   <div class="cp-row"><span>End</span><input type="range" min="0" max="359" id="cp-end" class="cp-hue"></div>
   <div class="cp-row"><span>Axis</span><select id="cp-axis"><option value="2">z</option><option value="0">x</option><option value="1">y</option></select></div>
+  <div class="cp-row" id="cp-accum-row"><span>Accumulate</span><select id="cp-accum"><option value="latest">latest</option><option value="all">accum</option><option value="2">2s</option><option value="5">5s</option><option value="10">10s</option><option value="30">30s</option></select></div>
   <div class="cp-row"><span>Voxels</span><input type="checkbox" id="cp-voxel"></div>
   <div class="cp-row"><span>Size</span><select id="cp-voxel-size"><option value="0.05">5&nbsp;cm</option><option value="0.1" selected>10&nbsp;cm</option><option value="0.2">20&nbsp;cm</option><option value="0.4">40&nbsp;cm</option></select></div>
   <div class="cp-sep">Filter &amp; downsample</div>
+  <div class="cp-row"><span>De-noise</span><input type="checkbox" id="cp-denoise"></div>
+  <div class="cp-row"><span>· radius (cm)</span><input type="number" id="cp-denoise-cell" class="cp-num" min="1" step="1"></div>
+  <div class="cp-row"><span>· min pts</span><input type="number" id="cp-denoise-min" class="cp-num" min="1" step="1"></div>
+  <div class="cp-hint" id="cp-defer-hint" style="display:none">de-noise applies when you close (large cloud)</div>
   <div class="cp-row"><span>Downsample</span><select id="cp-down"><option value="1">none</option><option value="2">2&times;</option><option value="4">4&times;</option><option value="8">8&times;</option><option value="16">16&times;</option></select></div>
   <div class="cp-row"><span>Max range</span><select id="cp-range"><option value="0">none</option><option value="3">3&nbsp;m</option><option value="5">5&nbsp;m</option><option value="10">10&nbsp;m</option><option value="20">20&nbsp;m</option><option value="50">50&nbsp;m</option></select></div>
   <div class="cp-row"><span>Z min</span><input type="number" id="cp-zmin" class="cp-num" step="0.1" placeholder="—"></div>
@@ -277,9 +284,11 @@
   <span class="clock" id="clock">0.0 / 0.0s</span>
   <input type="range" id="scrub" min="0" max="1000" value="0" step="1" />
   <select id="speed" title="Playback speed">
-    <option value="1">1×</option>
+    <option value="0.25">0.25×</option>
+    <option value="0.5">0.5×</option>
+    <option value="1" selected>1×</option>
     <option value="2">2×</option>
-    <option value="4" selected>4×</option>
+    <option value="4">4×</option>
     <option value="8">8×</option>
     <option value="16">16×</option>
   </select>
@@ -290,8 +299,12 @@
     <h1>Drop a recording here</h1>
     <p>A dimos <code>.db</code> recording — or use the button below to browse.</p>
     <button class="btn primary" id="browse">Browse for a .db file…</button>
+    <div class="reclist" id="recent-opened-wrap" style="display:none">
+      <h2>Recently opened</h2>
+      <div id="recent-opened"></div>
+    </div>
     <div class="reclist">
-      <h2>Recent recordings</h2>
+      <h2>All recordings</h2>
       <div id="recordings"><div class="empty">scanning…</div></div>
     </div>
   </div>
@@ -347,9 +360,6 @@ const GRAD_PAIRS = [
   ["#101010", "#ff9a00"],
   ["#2a2a2a", "#ffffff"],
 ]
-// Per-stream accumulation: "latest" (one frame), "all" (built-up map/path), or a
-// time window in seconds. Sent to the backend so seeks rebuild the same set.
-const ACCUM_OPTIONS = [["latest", "latest"], ["all", "accum"], ["2", "2s"], ["5", "5s"], ["10", "10s"], ["30", "30s"]]
 function nextDefaultGradient() {
   const used = [...known.values()].filter((entry) => entry.gradStart).length
   return GRAD_PAIRS[used % GRAD_PAIRS.length]
@@ -549,17 +559,31 @@ const custStart = document.getElementById("cp-start")
 const custMid = document.getElementById("cp-mid")
 const custEnd = document.getElementById("cp-end")
 const custAxis = document.getElementById("cp-axis")
+const custAccum = document.getElementById("cp-accum")
 const custVoxel = document.getElementById("cp-voxel")
 const custVoxelSize = document.getElementById("cp-voxel-size")
+const custDenoise = document.getElementById("cp-denoise")
+const custDenoiseCell = document.getElementById("cp-denoise-cell")
+const custDenoiseMin = document.getElementById("cp-denoise-min")
 const custDown = document.getElementById("cp-down")
 const custRange = document.getElementById("cp-range")
 const custZmin = document.getElementById("cp-zmin")
 const custZmax = document.getElementById("cp-zmax")
+const custDeferHint = document.getElementById("cp-defer-hint")
 let custStream = null
-function hideCustPanel() { custPanel.style.display = "none"; custStream = null }
+let pendingHeavyRebuild = null   // stream whose de-noise rebuild is deferred until close
+function flushPendingRebuild() {
+  if (!pendingHeavyRebuild) { return }
+  const cloud = clouds.get(pendingHeavyRebuild)
+  if (cloud) { applyCloudDisplay(cloud) }
+  pendingHeavyRebuild = null
+}
+function hideCustPanel() { flushPendingRebuild(); custPanel.style.display = "none"; custStream = null; custDeferHint.style.display = "none" }
 function openCustPanel(name, button) {
   const entry = known.get(name); if (!entry) { return }
+  flushPendingRebuild()   // commit any deferred rebuild from a previously-open stream
   custStream = name
+  custDeferHint.style.display = "none"
   document.getElementById("cp-title").textContent = name.split("#")[0]
   const startHex = entry.gradStart || GRAD_PAIRS[0][0]
   const endHex = entry.gradEnd || GRAD_PAIRS[0][1]
@@ -567,8 +591,17 @@ function openCustPanel(name, button) {
   custMid.value = String(Math.round(hexToHue(entry.gradMid || midpointHex(startHex, endHex))))
   custEnd.value = String(Math.round(hexToHue(endHex)))
   custAxis.value = String(entry.axis ?? 2)
+  custAccum.value = String(entry.accum ?? (entry.kind === "odom" ? "all" : "latest"))
+  // Odom streams only get the Accumulate control; hide the cloud-only color/filter rows.
+  const cloudOnly = entry.kind === "cloud"
+  custPanel.querySelectorAll(".cp-row, .cp-sep").forEach((el) => {
+    el.style.display = (cloudOnly || el.id === "cp-accum-row") ? "" : "none"
+  })
   custVoxel.checked = !!entry.voxel
   custVoxelSize.value = String(entry.voxelSize ?? 0.1)
+  custDenoise.checked = !!entry.denoise
+  custDenoiseCell.value = String(Math.round((entry.denoiseCell ?? 0.12) * 100))   // stored in m, shown in cm
+  custDenoiseMin.value = String(entry.denoiseMin ?? 4)
   custDown.value = String(entry.downsample ?? 1)
   custRange.value = String(entry.rangeMax ?? 0)
   custZmin.value = Number.isFinite(entry.zMin) ? String(entry.zMin) : ""
@@ -628,23 +661,53 @@ document.addEventListener("click", (event) => {
 // "change" fires once the user settles on a color (and on select/number commit).
 custPanel.addEventListener("change", () => {
   const entry = custStream && known.get(custStream); if (!entry) { return }
-  entry.gradStart = hueToHex(+custStart.value)
-  entry.gradMid = hueToHex(+custMid.value)
-  entry.gradEnd = hueToHex(+custEnd.value)
-  entry.axis = +custAxis.value
-  const wasVoxel = entry.voxel
-  entry.voxel = custVoxel.checked
-  entry.voxelSize = +custVoxelSize.value
-  const prevDown = entry.downsample, prevRange = entry.rangeMax, prevZmin = entry.zMin, prevZmax = entry.zMax
-  entry.downsample = +custDown.value || 1
-  entry.rangeMax = +custRange.value || 0
-  entry.zMin = custZmin.value === "" ? null : +custZmin.value
-  entry.zMax = custZmax.value === "" ? null : +custZmax.value
-  const displayChanged = entry.downsample !== prevDown || entry.rangeMax !== prevRange
-    || entry.zMin !== prevZmin || entry.zMax !== prevZmax
-  const cloud = clouds.get(custStream)
-  if (cloud) { if (displayChanged) { applyCloudDisplay(cloud) } else { recolor(cloud) } }
-  if (entry.voxel !== wasVoxel) { refreshStreams() }
+  const prevAccum = entry.accum
+  entry.accum = custAccum.value
+  // Cloud streams also carry color/voxel/filter controls; odom only has Accumulate.
+  if (entry.kind === "cloud") {
+    entry.gradStart = hueToHex(+custStart.value)
+    entry.gradMid = hueToHex(+custMid.value)
+    entry.gradEnd = hueToHex(+custEnd.value)
+    entry.axis = +custAxis.value
+    const wasVoxel = entry.voxel
+    entry.voxel = custVoxel.checked
+    entry.voxelSize = +custVoxelSize.value
+    const prevDown = entry.downsample, prevRange = entry.rangeMax, prevZmin = entry.zMin, prevZmax = entry.zMax
+    const prevDenoise = entry.denoise, prevDenoiseCell = entry.denoiseCell, prevDenoiseMin = entry.denoiseMin
+    entry.downsample = +custDown.value || 1
+    entry.rangeMax = +custRange.value || 0
+    entry.zMin = custZmin.value === "" ? null : +custZmin.value
+    entry.zMax = custZmax.value === "" ? null : +custZmax.value
+    entry.denoise = custDenoise.checked
+    entry.denoiseCell = (+custDenoiseCell.value || 12) / 100   // cm input → m
+    entry.denoiseMin = Math.max(1, Math.round(+custDenoiseMin.value) || 4)
+    const denoiseChanged = entry.denoise !== prevDenoise
+      || (entry.denoise && (entry.denoiseCell !== prevDenoiseCell || entry.denoiseMin !== prevDenoiseMin))
+    const displayChanged = entry.downsample !== prevDown || entry.rangeMax !== prevRange
+      || entry.zMin !== prevZmin || entry.zMax !== prevZmax || denoiseChanged
+    const cloud = clouds.get(custStream)
+    if (cloud) {
+      if (displayChanged) {
+        // De-noising a big cloud is too slow to redo on every keystroke, so on clouds
+        // past the threshold we defer the rebuild until the popup closes (see below).
+        if (entry.denoise && cloudPointCount(cloud) > DENOISE_DEFER_POINTS) {
+          pendingHeavyRebuild = custStream
+          custDeferHint.style.display = "block"
+        } else {
+          applyCloudDisplay(cloud)
+        }
+      } else {
+        recolor(cloud)
+      }
+    }
+    if (entry.voxel !== wasVoxel) { refreshStreams() }
+  }
+  if (entry.accum !== prevAccum) {
+    // Accumulation is a backend policy — it decides which frames get sent. Notify it,
+    // then re-seek so the scene rebuilds under the new policy.
+    app.send("accum", { stream: custStream, mode: entry.accum })
+    app.send("seek", { t: timeline.t })
+  }
   saveStreamStyle(custStream, entry)
 })
 window.addEventListener("pointerdown", (event) => {
@@ -654,10 +717,12 @@ window.addEventListener("keydown", (event) => { if (event.code === "Escape") { h
 function updateCamera(dt) {
   const forward = viewDir()
   const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize()
+  const flat = new THREE.Vector3(forward.x, forward.y, 0)
+  if (flat.lengthSq() > 1e-6) { flat.normalize() } else { flat.copy(right).cross(camera.up).negate() }
   const speed = (heldKeys.has("ShiftLeft") || heldKeys.has("ShiftRight") ? 15 : 5) * dt
   let moved = false
-  if (heldKeys.has("KeyW")) { camera.position.addScaledVector(forward, speed); moved = true }
-  if (heldKeys.has("KeyS")) { camera.position.addScaledVector(forward, -speed); moved = true }
+  if (heldKeys.has("KeyW")) { camera.position.addScaledVector(flat, speed); moved = true }
+  if (heldKeys.has("KeyS")) { camera.position.addScaledVector(flat, -speed); moved = true }
   if (heldKeys.has("KeyA")) { camera.position.addScaledVector(right, -speed); moved = true }
   if (heldKeys.has("KeyD")) { camera.position.addScaledVector(right, speed); moved = true }
   if (heldKeys.has("KeyE") || heldKeys.has("Space")) { camera.position.z += speed; moved = true }
@@ -954,6 +1019,27 @@ function ensureCloud(stream) {
   let cloud = clouds.get(stream)
   if (cloud) { return cloud }
   const material = new THREE.PointsMaterial({ size: 0.04, vertexColors: true, sizeAttenuation: true })
+  // Render each point as a round dot instead of the default square sprite (discard the
+  // fragments outside a unit circle in point-sprite space) and apply the same distance
+  // dimming the voxels use, so points fade toward VOXEL_DEPTH_FLOOR as they recede.
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying float vPointViewDepth;")
+      .replace("#include <project_vertex>", "#include <project_vertex>\nvPointViewDepth = -mvPosition.z;")
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying float vPointViewDepth;")
+      .replace(
+        "void main() {",
+        "void main() {\n  if (length(gl_PointCoord - vec2(0.5)) > 0.5) { discard; }",
+      )
+      .replace(
+        "#include <premultiplied_alpha_fragment>",
+        "float pointDepthX = clamp((vPointViewDepth - " + VOXEL_DEPTH_NEAR.toFixed(3) + ") / (" +
+        VOXEL_DEPTH_FAR.toFixed(3) + " - " + VOXEL_DEPTH_NEAR.toFixed(3) + "), 0.0, 1.0);\n" +
+        "float pointDepthT = 1.0 - pow(1.0 - pointDepthX, " + VOXEL_DEPTH_EASE.toFixed(3) + ");\n" +
+        "gl_FragColor.rgb *= mix(1.0, " + VOXEL_DEPTH_FLOOR.toFixed(3) + ", pointDepthT);\n#include <premultiplied_alpha_fragment>",
+      )
+  }
   const group = new THREE.Group()
   scene.add(group)
   cloud = { group, material, frames: [], frame: "", stream }
@@ -1001,6 +1087,44 @@ function gradColorAt(stops, t) {
 // Z-height clip). The displayed point/voxel geometry is rebuilt from this, so both
 // views honor the same settings. With no filtering the raw buffer is returned as-is
 // (shared reference — no copy) so the common case stays memory-cheap.
+// Statistical-ish outlier removal: bin points into a coarse grid, then drop any point
+// whose 3×3×3 cell neighborhood holds fewer than `min` points. Isolated specks (sensor
+// noise, stray reflections) have empty neighborhoods and get culled, while points on a
+// real surface always have plenty of company. `cell` (grid size) and `min` are set per
+// stream in the Filter popup. Cheap: one hash-grid pass + a 27-cell lookup each, and it
+// only runs when the display is (re)built, not per render.
+function denoiseLocal(kept, cell, min) {
+  const count = kept.length / 3
+  if (count <= min) { return kept }
+  const inv = 1 / cell
+  const cells = new Int32Array(count * 3)
+  const counts = new Map()
+  for (let i = 0; i < count; i++) {
+    const ix = Math.floor(kept[i * 3] * inv)
+    const iy = Math.floor(kept[i * 3 + 1] * inv)
+    const iz = Math.floor(kept[i * 3 + 2] * inv)
+    cells[i * 3] = ix; cells[i * 3 + 1] = iy; cells[i * 3 + 2] = iz
+    const key = ix + "," + iy + "," + iz
+    counts.set(key, (counts.get(key) || 0) + 1)
+  }
+  const out = new Float32Array(kept.length)
+  let written = 0
+  for (let i = 0; i < count; i++) {
+    const ix = cells[i * 3], iy = cells[i * 3 + 1], iz = cells[i * 3 + 2]
+    let neighbors = 0
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          neighbors += counts.get((ix + dx) + "," + (iy + dy) + "," + (iz + dz)) || 0
+        }
+      }
+    }
+    if (neighbors >= min) {
+      out[written++] = kept[i * 3]; out[written++] = kept[i * 3 + 1]; out[written++] = kept[i * 3 + 2]
+    }
+  }
+  return out.slice(0, written)
+}
 function computeKeptLocal(raw, entry, pose) {
   const count = raw.length / 3
   const stride = Math.max(1, Math.round(entry?.downsample || 1))
@@ -1009,7 +1133,10 @@ function computeKeptLocal(raw, entry, pose) {
   const zMin = Number.isFinite(entry?.zMin) ? entry.zMin : -Infinity
   const zMax = Number.isFinite(entry?.zMax) ? entry.zMax : Infinity
   const hasFilter = rangeMax > 0 || zMin > -Infinity || zMax < Infinity
-  if (stride === 1 && !hasFilter) { return raw }
+  const denoise = !!entry?.denoise
+  const denoiseCell = entry?.denoiseCell > 0 ? entry.denoiseCell : 0.12
+  const denoiseMin = entry?.denoiseMin > 0 ? entry.denoiseMin : 4
+  if (stride === 1 && !hasFilter) { return denoise ? denoiseLocal(raw, denoiseCell, denoiseMin) : raw }
   const sx = pose[12], sy = pose[13], sz = pose[14]   // sensor world position
   const kept = new Float32Array(count * 3)   // upper bound; sliced to fit below
   let written = 0
@@ -1025,7 +1152,8 @@ function computeKeptLocal(raw, entry, pose) {
     }
     kept[written++] = x; kept[written++] = y; kept[written++] = z
   }
-  return kept.slice(0, written)   // right-sized copy so the oversized temp is freed
+  const result = kept.slice(0, written)   // right-sized copy so the oversized temp is freed
+  return denoise ? denoiseLocal(result, denoiseCell, denoiseMin) : result
 }
 function rebuildFrameGeom(cloud, frame, entry) {
   const kept = computeKeptLocal(frame.rawXyz, entry, frame.points.matrix.elements)
@@ -1045,15 +1173,27 @@ function applyCloudDisplay(cloud) {
   for (const frame of cloud.frames) { rebuildFrameGeom(cloud, frame, entry) }
   syncCloud(cloud, true)
 }
+// Total raw (pre-filter) points across a cloud's frames — used to decide when a live
+// rebuild would be too heavy to run on every keystroke (see the de-noise defer below).
+const DENOISE_DEFER_POINTS = 40000
+function cloudPointCount(cloud) {
+  let total = 0
+  for (const frame of cloud.frames) { if (frame.rawXyz) { total += frame.rawXyz.length / 3 } }
+  return total
+}
 // ── voxel rendering: quantize a frame's points onto a grid and draw one instanced
 // cube per occupied cell, colored by the same gradient/axis as the point view. ──
 const voxelColor = new THREE.Color(), voxelMatrix = new THREE.Matrix4()
 // Depth cue: dim each voxel fragment by its view-space distance so far cubes read as
 // darker, adding a sense of depth. Done entirely in the shader (a tiny onBeforeCompile
 // patch), so it costs nothing per frame on the CPU — the GPU already knows each
-// fragment's depth. Dimming starts at VOXEL_DEPTH_NEAR and eases to VOXEL_DEPTH_FLOOR
-// brightness by VOXEL_DEPTH_FAR; kept subtle per the "slightly" ask.
-const VOXEL_DEPTH_NEAR = 1.5, VOXEL_DEPTH_FAR = 9.0, VOXEL_DEPTH_FLOOR = 0.25
+// fragment's depth. Dimming eases in via a smoothstep from VOXEL_DEPTH_NEAR to
+// VOXEL_DEPTH_FLOOR brightness by VOXEL_DEPTH_FAR — a soft dropoff rather than a
+// hard linear ramp, so near cubes hold full brightness and the fade in/out is gentle.
+const VOXEL_DEPTH_NEAR = 6.0, VOXEL_DEPTH_FAR = 35.0, VOXEL_DEPTH_FLOOR = 0.25
+// Ease-out exponent for the depth dim: dimT = 1 - (1 - x)^EASE over the near→far span.
+// EASE > 1 front-loads the falloff (aggressive right after NEAR, then tapers into the floor).
+const VOXEL_DEPTH_EASE = 3.0
 // Lambert shading multiplies each voxel's hue by the incoming light, which darkens and
 // desaturates it (looks dull). Blend the lit result back toward the pure per-instance
 // hue by this much so colors stay vibrant while the lighting still gives shape/shading.
@@ -1069,9 +1209,10 @@ function applyVoxelShading(material) {
             .replace(
                 "#include <dithering_fragment>",
                 "gl_FragColor.rgb = mix(gl_FragColor.rgb, vVoxelPureColor, " + VOXEL_VIBRANCY.toFixed(3) + ");\n" +
-                "float voxelDepthDim = mix(1.0, " + VOXEL_DEPTH_FLOOR.toFixed(3) +
-                ", clamp((vVoxelViewDepth - " + VOXEL_DEPTH_NEAR.toFixed(3) + ") / " +
-                (VOXEL_DEPTH_FAR - VOXEL_DEPTH_NEAR).toFixed(3) + ", 0.0, 1.0));\n" +
+                "float voxelDepthX = clamp((vVoxelViewDepth - " + VOXEL_DEPTH_NEAR.toFixed(3) + ") / (" +
+                VOXEL_DEPTH_FAR.toFixed(3) + " - " + VOXEL_DEPTH_NEAR.toFixed(3) + "), 0.0, 1.0);\n" +
+                "float voxelDepthT = 1.0 - pow(1.0 - voxelDepthX, " + VOXEL_DEPTH_EASE.toFixed(3) + ");\n" +
+                "float voxelDepthDim = mix(1.0, " + VOXEL_DEPTH_FLOOR.toFixed(3) + ", voxelDepthT);\n" +
                 "gl_FragColor.rgb *= voxelDepthDim;\n#include <dithering_fragment>",
             )
     }
@@ -1167,6 +1308,11 @@ function pruneCloudFrames(cloud, latestTs) {
 function onCloud(payload) {
   const cloud = ensureCloud(payload.stream)
   cloud.frame = payload.frame
+  // Register the stream (creating its entry with the voxel/filter defaults) BEFORE
+  // building geometry, so the first frame's rebuildFrameGeom/syncCloud see the entry.
+  // Otherwise the very first scan renders as raw points and only flips to voxels once
+  // the customize panel forces a refresh.
+  addStream(payload.stream, "cloud")
   const rawXyz = new Float32Array(b64ToBuffer(payload.b64))
   const points = new THREE.Points(new THREE.BufferGeometry(), cloud.material)
   points.matrixAutoUpdate = false
@@ -1189,7 +1335,6 @@ function onCloud(payload) {
   pruneCloudFrames(cloud, frame.ts)
   syncCloud(cloud)
   fitDirty = true
-  addStream(payload.stream, "cloud")
 }
 
 // ── odometry / pose: body + gizmo + trail per stream ──
@@ -1208,17 +1353,24 @@ function ensureOdom(stream) {
   const group = new THREE.Group(); group.matrixAutoUpdate = false
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(0.5, 0.28, 0.22),
-    new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.6 }))
+    // Emissive base + high roughness keeps shadowed faces from crushing to black, so
+    // the box reads as its color from every angle instead of a harsh lit/unlit split.
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.5, metalness: 0.05, roughness: 0.85 }))
   body.position.z = 0.11
   group.add(body); group.add(makeAxes(0.6, 0.012))
   const geom = new THREE.BufferGeometry()
   geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * TRAIL_CAP), 3))
+  geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * TRAIL_CAP), 3))
   geom.setDrawRange(0, 0)
-  const trail = new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ color }))
+  // Per-vertex colors fade the path from a dim start hue to the full stream color at the
+  // finish, so the trajectory reads start→finish as a gradient (see colorAt in onOdom).
+  const trail = new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ vertexColors: true }))
   scene.add(group); scene.add(trail)
+  const endColor = new THREE.Color(color)
+  const startColor = endColor.clone().multiplyScalar(0.2)
   // ts (one per vertex) lets the window mode drop old segments; start is the first
   // still-shown vertex (kept even so whole segments are dropped together).
-  odom = { group, trail, geom, tsArray: new Float64Array(TRAIL_CAP), count: 0, start: 0, last: null }
+  odom = { group, trail, geom, tsArray: new Float64Array(TRAIL_CAP), count: 0, start: 0, last: null, lastTs: null, startColor, endColor }
   odoms.set(stream, odom)
   return odom
 }
@@ -1238,6 +1390,16 @@ function updateOdomTrailDisplay(odom, stream, latestTs) {
   while (odom.start + 2 < odom.count && odom.tsArray[odom.start] < cutoff) { odom.start += 2 }
   odom.geom.setDrawRange(odom.start, Math.max(0, odom.count - odom.start))
 }
+const trailScratchColor = new THREE.Color()
+// Fraction of the way through the recording for a given trail vertex ts (0 = start,
+// 1 = finish), used to place it on the odom start→finish color gradient.
+function trailColorAt(odom, ts) {
+  let t = 0.5
+  if (timeline && timeline.t1 > timeline.t0) {
+    t = Math.min(1, Math.max(0, (ts - timeline.t0) / (timeline.t1 - timeline.t0)))
+  }
+  return trailScratchColor.copy(odom.startColor).lerp(odom.endColor, t)
+}
 function onOdom(payload) {
   const odom = ensureOdom(payload.stream)
   const pose = new THREE.Matrix4().compose(
@@ -1255,7 +1417,9 @@ function onOdom(payload) {
     if (odom.count + 2 > TRAIL_CAP) {
       if (odom.start > 0) {
         const positions = odom.geom.getAttribute("position").array
+        const colors = odom.geom.getAttribute("color").array
         positions.copyWithin(0, odom.start * 3, odom.count * 3)
+        colors.copyWithin(0, odom.start * 3, odom.count * 3)
         odom.tsArray.copyWithin(0, odom.start, odom.count)
         odom.count -= odom.start; odom.start = 0
       }
@@ -1265,13 +1429,20 @@ function onOdom(payload) {
       const base = odom.count * 3
       array[base] = odom.last.x; array[base + 1] = odom.last.y; array[base + 2] = odom.last.z
       array[base + 3] = worldPosition.x; array[base + 4] = worldPosition.y; array[base + 5] = worldPosition.z
+      const colors = odom.geom.getAttribute("color").array
+      const cFrom = trailColorAt(odom, odom.lastTs ?? ts)
+      colors[base] = cFrom.r; colors[base + 1] = cFrom.g; colors[base + 2] = cFrom.b
+      const cTo = trailColorAt(odom, ts)
+      colors[base + 3] = cTo.r; colors[base + 4] = cTo.g; colors[base + 5] = cTo.b
       odom.tsArray[odom.count] = ts; odom.tsArray[odom.count + 1] = ts
       odom.count += 2
       odom.geom.getAttribute("position").needsUpdate = true
+      odom.geom.getAttribute("color").needsUpdate = true
       fitDirty = true
     }
   }
   odom.last = worldPosition
+  odom.lastTs = ts
   addStream(payload.stream, "odom", anchored)
   updateOdomTrailDisplay(odom, payload.stream, ts)
 }
@@ -1532,7 +1703,7 @@ const known = new Map()   // name -> { kind, on }
 // to localStorage so a reload restores it. Keyed by the base topic name (before any
 // "#" disambiguator) so the same sensor keeps its style across recordings too.
 const STYLE_STORAGE_KEY = "rv-stream-style:v1"
-const STYLE_KEYS = ["gradStart", "gradMid", "gradEnd", "axis", "voxel", "voxelSize", "downsample", "rangeMax", "zMin", "zMax", "accum", "on", "winX", "winY", "winW", "winH", "winCollapsed"]
+const STYLE_KEYS = ["gradStart", "gradMid", "gradEnd", "axis", "voxel", "voxelSize", "downsample", "rangeMax", "zMin", "zMax", "denoise", "denoiseCell", "denoiseMin", "accum", "on", "winX", "winY", "winW", "winH", "winCollapsed"]
 const styleKeyFor = (name) => String(name).split("#")[0]
 function loadSavedStyles() {
     try { return JSON.parse(localStorage.getItem(STYLE_STORAGE_KEY) || "{}") || {} }
@@ -1562,21 +1733,17 @@ function refreshStreams() {
   updateToggleAllLabel()
   if (!known.size) { list.innerHTML = '<div class="empty">none yet</div>'; return }
   const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, entry]) => {
-    // Cloud rows get gradient + gradient-axis pickers; cloud & odom rows also get an
-    // accumulation picker (latest / accumulate / time window). Others show a kind tag.
-    const accum = entry.accum || (entry.kind === "odom" ? "all" : "latest")
-    const accumSelect = (entry.kind === "cloud" || entry.kind === "odom")
-      ? `<select class="grad-pick accum-pick" data-acc="${encodeURIComponent(name)}">` +
-        ACCUM_OPTIONS.map(([value, label]) => `<option value="${value}" ${value === accum ? "selected" : ""}>${label}</option>`).join("") + `</select>`
-      : ""
+    // Cloud and odom rows both open a customize popup (cloud: color/voxel/filter +
+    // accumulation; odom: just accumulation). Other kinds show a plain kind tag.
     let control
     if (entry.kind === "cloud") {
-      control = `<button class="cust-btn" data-cust="${encodeURIComponent(name)}">` +
-        `<span class="cb-idle">${entry.voxel ? "voxels" : "lidar"}</span><span class="cb-hover">customize</span></button>` +
-        accumSelect +
-        (name.split("#")[0].endsWith("_aggregated") ? "" : `<button class="agg-btn" data-agg="${encodeURIComponent(name)}" title="More">⋯</button>`)
+      const aggBtn = name.split("#")[0].endsWith("_aggregated") ? "" : `<button class="agg-btn" data-agg="${encodeURIComponent(name)}" title="More">⋯</button>`
+      control = aggBtn +
+        `<button class="cust-btn" data-cust="${encodeURIComponent(name)}">` +
+        `<span class="cb-idle">${entry.voxel ? "voxels" : "lidar"}</span><span class="cb-hover">customize</span></button>`
     } else if (entry.kind === "odom") {
-      control = `<span class="tag kc-odom">odom</span>` + accumSelect
+      control = `<button class="cust-btn" data-cust="${encodeURIComponent(name)}">` +
+        `<span class="cb-idle">odom</span><span class="cb-hover">customize</span></button>`
     } else {
       control = `<span class="tag kc-${entry.kind}">${entry.kind}</span>`
     }
@@ -1586,18 +1753,6 @@ function refreshStreams() {
   if (list.dataset.sig !== rows) { list.dataset.sig = rows; list.innerHTML = rows }
 }
 document.getElementById("stream-list").addEventListener("change", (event) => {
-  const accumPick = event.target.closest("select[data-acc]")
-  if (accumPick) {
-    const name = decodeURIComponent(accumPick.dataset.acc)
-    const entry = known.get(name)
-    if (entry) {
-      entry.accum = accumPick.value
-      app.send("accum", { stream: name, mode: entry.accum })
-      app.send("seek", { t: timeline.t })   // rebuild the scene with the new policy
-      saveStreamStyle(name, entry)
-    }
-    return
-  }
   const checkbox = event.target.closest("input[data-s]"); if (!checkbox) { return }
   const name = decodeURIComponent(checkbox.dataset.s)
   const entry = known.get(name); if (entry) { entry.on = checkbox.checked; setVisible(name, checkbox.checked); saveStreamStyle(name, entry) }
@@ -1617,7 +1772,7 @@ function addStream(name, kind, defaultOn = true) {
   const current = known.get(name)
   if (!current) {
     const entry = { kind: kind || "…", on: defaultOn }
-    if (kind === "cloud") { const pair = nextDefaultGradient(); entry.gradStart = pair[0]; entry.gradEnd = pair[1]; entry.axis = 2; entry.accum = "latest"; entry.downsample = 1; entry.rangeMax = 0; entry.zMin = null; entry.zMax = null }
+    if (kind === "cloud") { const pair = nextDefaultGradient(); entry.gradStart = pair[0]; entry.gradEnd = pair[1]; entry.axis = 2; entry.accum = "latest"; entry.downsample = 1; entry.rangeMax = 0; entry.zMin = null; entry.zMax = null; entry.denoise = false; entry.denoiseCell = 0.12; entry.denoiseMin = 4; entry.voxel = true }
     if (kind === "odom") { entry.accum = "all" }
     applySavedStyle(name, entry)
     known.set(name, entry); refreshStreams()
@@ -1713,18 +1868,35 @@ function fmtSize(bytes) {
   while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++ }
   return `${value.toFixed(value < 10 && unit > 0 ? 1 : 0)}${units[unit]}`
 }
-function renderRecordings(recordings) {
-  const container = document.getElementById("recordings")
-  if (!recordings || !recordings.length) { container.innerHTML = '<div class="empty">no .db recordings found in known folders</div>'; return }
-  container.innerHTML = recordings.slice(0, 40).map((record) =>
-    `<div class="rec" data-path="${encodeURIComponent(record.path)}">` +
+function recRow(record) {
+  return `<div class="rec" data-path="${encodeURIComponent(record.path)}">` +
     `<span class="rn">${(record.label || record.name).replace(/[&<>]/g, "")}</span>` +
-    `<span class="rmeta">${fmtSize(record.size)}</span></div>`).join("")
+    `<span class="rmeta">${fmtSize(record.size)}</span></div>`
 }
-document.getElementById("recordings").addEventListener("click", (event) => {
+function renderRecordings(recordings, recent) {
+  // Recently-opened (persisted by the backend) floats to its own list on top; it
+  // includes files browsed from anywhere, not just the scanned folders.
+  const recentList = recent || []
+  const recentPaths = new Set(recentList.map((record) => record.path))
+  const recentWrap = document.getElementById("recent-opened-wrap")
+  const recentEl = document.getElementById("recent-opened")
+  if (recentList.length) {
+    recentWrap.style.display = ""
+    recentEl.innerHTML = recentList.slice(0, 15).map(recRow).join("")
+  } else {
+    recentWrap.style.display = "none"
+  }
+  const container = document.getElementById("recordings")
+  const rest = (recordings || []).filter((record) => !recentPaths.has(record.path))
+  if (!rest.length) { container.innerHTML = '<div class="empty">no .db recordings found in known folders</div>'; return }
+  container.innerHTML = rest.slice(0, 40).map(recRow).join("")
+}
+function onRecClick(event) {
   const item = event.target.closest(".rec[data-path]"); if (!item) { return }
   open(decodeURIComponent(item.dataset.path))
-})
+}
+document.getElementById("recordings").addEventListener("click", onRecClick)
+document.getElementById("recent-opened").addEventListener("click", onRecClick)
 function open(path) {
   setStatus("loading")
   app.send("open", { path })
@@ -1758,14 +1930,14 @@ function setStatus(state, detail) {
 // ── app bus ──
 const app = new DimAppFrontend()
 app.receiveRequest((kind, payload) => {
-  if (kind === "recordings") { renderRecordings(payload.recordings) }
+  if (kind === "recordings") { renderRecordings(payload.recordings, payload.recent) }
   else if (kind === "loading") { setStatus("loading", "opening " + (payload.name || "")) }
   else if (kind === "loaded") {
     clearScene(); known.clear(); imageWindows.clear(); camLayer.replaceChildren(); camCascade = 0; refreshStreams()
     rebuilding = false
     userMovedCamera = false; fitDirty = true
     loadedName.textContent = "· " + (payload.name || payload.path || "")
-    timeline = { t0: payload.t0, t1: payload.t1, t: payload.t0, playing: true }
+    timeline = { t0: payload.t0, t1: payload.t1, t: payload.t0, playing: false }
     overlay.classList.add("hidden"); transport.classList.remove("hidden"); panel.style.display = "block"
     renderTransport(); setStatus("ready")
   }
