@@ -757,11 +757,10 @@ function seekTo(targetTs) {
     //   clouds  → each stream's accumulation policy (selectCloudCursors)
     //   images  → only the latest frame per stream (each is a full blob off disk)
     //   odom    → subsampled trail (kept spacing stays under the frontend's TRAIL_JUMP)
-    //   tf      → collapsed to the current transform tree, sent as ONE message
+    //   tf      → interleaved in Pass 2, coalesced per kept frame (see below)
     const cloudCursors = new Map()   // stream-index -> [sortedCursor, ...] up to target
     const odomCursors = new Map()    // stream-index -> [sortedCursor, ...] up to target
     const latestImage = new Map()    // stream-index -> last image sortedCursor up to target
-    const tfCursors = []             // every tf sortedCursor up to target (newest wins)
     const bucket = (map, streamIndex, cursor) => {
         let list = map.get(streamIndex)
         if (!list) { list = []; map.set(streamIndex, list) }
@@ -775,12 +774,8 @@ function seekTo(targetTs) {
         if (kind === KIND_CODES.cloud) { bucket(cloudCursors, streamIndex, scan) }
         else if (kind === KIND_CODES.odom) { bucket(odomCursors, streamIndex, scan) }
         else if (kind === KIND_CODES.image) { latestImage.set(streamIndex, scan) }
-        else if (kind === KIND_CODES.tf) { tfCursors.push(scan) }
         scan++
     }
-    // Establish the current transform tree first (one message) so the odom/cloud
-    // frames that follow resolve against it.
-    emitConsolidatedTf(tfCursors)
     const keep = new Set()
     for (const [streamIndex, cursors] of cloudCursors) {
         for (const sortedCursor of selectCloudCursors(streamIndex, cursors, clamped)) {
@@ -793,58 +788,47 @@ function seekTo(targetTs) {
         }
     }
     for (const sortedCursor of latestImage.values()) { keep.add(sortedCursor) }
-    // Pass 2: emit the kept cloud/odom/image frames (+ any path) in timeline order.
-    // tf was already collapsed above, so its entries are skipped here.
+    // Pass 2: emit the kept cloud/odom/image frames (+ any path) in timeline order,
+    // interleaving tf so each frame bakes against the transform tree current at ITS
+    // timestamp. tf updates between two kept frames are coalesced (newest-per-child)
+    // into ONE message flushed right before the frame — a moving frame like
+    // world→lidar_link would otherwise resolve to the final pose and pile every
+    // accumulated cloud onto the current robot frame. Coalescing bounds tf bus
+    // messages to ~one per kept frame while decode stays cheap (blobs read on demand).
     playback.cursor = 0
+    const pendingTf = new Map()   // child -> { parent, t, q } since the last flush
+    const flushTf = () => {
+        if (!pendingTf.size) { return }
+        const transforms = []
+        for (const [child, edge] of pendingTf) { transforms.push({ parent: edge.parent, child, t: edge.t, q: edge.q }) }
+        dimApp.send("tf", { transforms })
+        pendingTf.clear()
+    }
     while (playback.cursor < playback.count && playback.tsArray[playback.order[playback.cursor]] <= clamped) {
         const kind = playback.kindArray[playback.order[playback.cursor]]
-        if (kind === KIND_CODES.tf) { /* already sent as the consolidated tree */ }
-        else if (kind === KIND_CODES.path || keep.has(playback.cursor)) {
+        if (kind === KIND_CODES.tf) {
+            const message = decodeAt(playback.cursor)
+            if (message && Array.isArray(message.transforms)) {
+                for (const transform of message.transforms) {
+                    if (!transform.transform) { continue }
+                    const translation = transform.transform.translation
+                    const rotation = transform.transform.rotation
+                    pendingTf.set(transform.child_frame_id || "", {
+                        parent: transform?.header?.frame_id || "",
+                        t: [translation.x, translation.y, translation.z],
+                        q: [rotation.x, rotation.y, rotation.z, rotation.w],
+                    })
+                }
+            }
+        } else if (kind === KIND_CODES.path || keep.has(playback.cursor)) {
+            flushTf()
             emitAt(playback.cursor)
         }
         playback.cursor++
     }
+    flushTf()   // trailing tf so the final tree matches the playhead
     playback.playhead = clamped
     sendTime()
-}
-
-// Collapse a tf history into the current transform tree — the newest transform per
-// child frame — and send it as a single "tf" message. The frontend's tf map is
-// latest-wins per child, so this reproduces the exact tree the full replay would build
-// without emitting tens of thousands of tf updates. Walks newest→oldest and stops once
-// the tree stops growing, so it also avoids decoding the whole tf history.
-function emitConsolidatedTf(tfCursors) {
-    if (!tfCursors.length) {
-        return
-    }
-    const edges = new Map()   // child -> { parent, t, q }
-    let sinceNew = 0
-    for (let i = tfCursors.length - 1; i >= 0 && sinceNew < 500; i--) {
-        const message = decodeAt(tfCursors[i])
-        let added = false
-        if (message && Array.isArray(message.transforms)) {
-            for (const transform of message.transforms) {
-                const child = transform.child_frame_id || ""
-                if (edges.has(child) || !transform.transform) { continue }
-                const translation = transform.transform.translation
-                const rotation = transform.transform.rotation
-                edges.set(child, {
-                    parent: transform?.header?.frame_id || "",
-                    t: [translation.x, translation.y, translation.z],
-                    q: [rotation.x, rotation.y, rotation.z, rotation.w],
-                })
-                added = true
-            }
-        }
-        sinceNew = added ? 0 : sinceNew + 1
-    }
-    const transforms = []
-    for (const [child, edge] of edges) {
-        transforms.push({ parent: edge.parent, child, t: edge.t, q: edge.q })
-    }
-    if (transforms.length) {
-        dimApp.send("tf", { transforms })
-    }
 }
 
 // Evenly thin a cursor list to at most `cap`, always keeping the last (so the current
