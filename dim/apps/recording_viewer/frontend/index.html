@@ -237,6 +237,29 @@
   #tf-warn-card .tw-tree .tw-bad::after { content: "  ← can't place this"; font-weight: 600; opacity: 0.85; }
   #tf-warn-card .tw-foot { margin-top: 14px; text-align: center; font-size: 10.5px; color: var(--muted-fg);
     font-family: var(--mono); }
+  #fb-backdrop { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center;
+    background: color-mix(in oklch, #000 48%, transparent); backdrop-filter: blur(2px); }
+  #fb-card { width: 620px; max-width: calc(100vw - 40px); height: 520px; max-height: calc(100vh - 60px);
+    display: flex; flex-direction: column; padding: 16px 18px; border-radius: var(--radius-lg);
+    background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow-lg); }
+  #fb-card .fb-title { font-size: 15px; font-weight: 650; color: var(--fg); margin-bottom: 10px; }
+  #fb-path { width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 12px;
+    padding: 7px 9px; border-radius: var(--radius); border: 1px solid var(--border);
+    background: var(--card); color: var(--fg); }
+  #fb-list { flex: 1; overflow-y: auto; margin-top: 10px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: color-mix(in oklch, var(--muted-fg) 6%, transparent); }
+  #fb-list .fb-row { display: flex; align-items: center; gap: 9px; padding: 7px 11px; cursor: pointer;
+    font-family: var(--mono); font-size: 12px; color: var(--fg); border-bottom: 1px solid var(--border); }
+  #fb-list .fb-row:last-child { border-bottom: none; }
+  #fb-list .fb-row:hover { background: var(--accent); }
+  #fb-list .fb-icon { flex: none; width: 14px; text-align: center; opacity: 0.75; }
+  #fb-list .fb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #fb-list .fb-size { flex: none; font-size: 11px; color: var(--muted-fg); }
+  #fb-list .fb-empty { padding: 14px; font-size: 12px; color: var(--muted-fg); text-align: center; }
+  #fb-card .fb-actions { display: flex; justify-content: flex-end; margin-top: 14px; }
+  #fb-card .fb-actions button { font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+    border-radius: var(--radius); padding: 7px 15px; border: 1px solid var(--border); background: var(--card); color: var(--fg); }
+  #fb-card .fb-actions button:hover { background: var(--accent); }
   #cust-panel { position: absolute; z-index: 9; display: none; padding: 9px; min-width: 158px;
     background: color-mix(in oklch, var(--card) 96%, transparent); border: 1px solid var(--border);
     border-radius: var(--radius); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); }
@@ -358,6 +381,15 @@
     <div class="tw-tree-label">transform tree(s) in this recording</div>
     <div class="tw-tree" id="tf-warn-tree"></div>
     <div class="tw-foot">click anywhere to dismiss</div>
+  </div>
+</div>
+
+<div id="fb-backdrop">
+  <div id="fb-card">
+    <div class="fb-title">Open a recording</div>
+    <input id="fb-path" spellcheck="false" autocomplete="off" />
+    <div id="fb-list"></div>
+    <div class="fb-actions"><button id="fb-cancel">Cancel</button></div>
   </div>
 </div>
 
@@ -2046,8 +2078,62 @@ function open(path) {
   setStatus("loading")
   app.send("open", { path })
 }
-document.getElementById("browse").addEventListener("click", () => { setStatus("loading"); app.send("pickFile") })
-document.getElementById("browse-top").addEventListener("click", () => { setStatus("loading"); app.send("pickFile") })
+// ── in-page file browser ──
+// Deliberately not a native dialog (the backend used to spawn one, which surfaced
+// unreliably from the desktop's background service) and not an <input type=file>,
+// which yields no filesystem path. The backend lists directories over the bus.
+const fbBackdrop = document.getElementById("fb-backdrop")
+const fbPath = document.getElementById("fb-path")
+const fbList = document.getElementById("fb-list")
+let fbDir = null
+function fbOpen() {
+  fbBackdrop.style.display = "flex"
+  fbList.innerHTML = '<div class="fb-empty">loading…</div>'
+  app.send("listDir", { dir: fbDir || "~" })
+}
+function fbClose() {
+  fbBackdrop.style.display = "none"
+}
+function fbRender(listing) {
+  if (fbBackdrop.style.display === "none") { return }
+  fbDir = listing.dir
+  fbPath.value = listing.dir
+  if (listing.error) { fbList.innerHTML = `<div class="fb-empty">${listing.error.replace(/[&<>]/g, "")}</div>`; return }
+  const rows = []
+  if (listing.parent) {
+    rows.push(`<div class="fb-row" data-dir="${encodeURIComponent(listing.parent)}"><span class="fb-icon">↰</span><span class="fb-name">..</span></div>`)
+  }
+  for (const entry of listing.dirs) {
+    rows.push(`<div class="fb-row" data-dir="${encodeURIComponent(entry.path)}"><span class="fb-icon">▸</span><span class="fb-name">${entry.name.replace(/[&<>]/g, "")}</span></div>`)
+  }
+  for (const entry of listing.files) {
+    rows.push(`<div class="fb-row" data-file="${encodeURIComponent(entry.path)}"><span class="fb-icon">▪</span><span class="fb-name">${entry.name.replace(/[&<>]/g, "")}</span><span class="fb-size">${fmtSize(entry.size)}</span></div>`)
+  }
+  fbList.innerHTML = rows.length ? rows.join("") : '<div class="fb-empty">no folders or .db files here</div>'
+}
+fbList.addEventListener("click", (event) => {
+  const row = event.target.closest(".fb-row"); if (!row) { return }
+  if (row.dataset.dir) {
+    fbDir = decodeURIComponent(row.dataset.dir)
+    fbList.innerHTML = '<div class="fb-empty">loading…</div>'
+    app.send("listDir", { dir: fbDir })
+  } else if (row.dataset.file) {
+    fbClose()
+    open(decodeURIComponent(row.dataset.file))
+  }
+})
+fbPath.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") { return }
+  const value = fbPath.value.trim(); if (!value) { return }
+  if (value.endsWith(".db")) { fbClose(); open(value); return }
+  fbDir = value
+  app.send("listDir", { dir: value })
+})
+document.getElementById("fb-cancel").addEventListener("click", fbClose)
+fbBackdrop.addEventListener("click", (event) => { if (event.target === fbBackdrop) { fbClose() } })
+window.addEventListener("keydown", (event) => { if (event.code === "Escape") { fbClose() } })
+document.getElementById("browse").addEventListener("click", fbOpen)
+document.getElementById("browse-top").addEventListener("click", fbOpen)
 
 // ── drag & drop (name-resolved by the backend) ──
 const dropZone = document.getElementById("drop")
@@ -2130,8 +2216,16 @@ app.receiveRequest((kind, payload) => {
   }
   else if (kind === "tfReport") { onTfReport(payload) }
   else if (kind === "error") { setStatus("error", payload.message); overlay.classList.remove("hidden") }
-  else if (kind === "pickCancelled") { setStatus(known.size ? "ready" : "idle") }
+  else if (kind === "dirListing") { fbRender(payload) }
 })
+// The SDK reconnects on its own but exposes no open hook, and the backend only
+// sends the recordings list in reply to a hello. Without re-greeting, a page that
+// was open across a desktop restart sits on "scanning…" forever.
+let wasConnected = app.connected
+setInterval(() => {
+  if (app.connected && !wasConnected) { app.send("hello") }
+  wasConnected = app.connected
+}, 500)
 app.send("hello")
 setStatus("idle")
 </script>

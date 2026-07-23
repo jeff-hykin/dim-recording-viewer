@@ -302,33 +302,38 @@ async function recentRecordings() {
     }
     return out
 }
-// A dropped File in the webview is bytes-only (the SDK strips the path at
-// v0.3.0), and recordings are far too big to cross the app bus. The backend runs
-// as a full-permission Deno process, so it opens a native file dialog itself and
-// reads the chosen absolute path from stdout.
-async function pickFileNative() {
-    const attempts = Deno.build.os === "darwin"
-        ? [["osascript", "-e", "POSIX path of (choose file with prompt \"Select a dimos recording\")"]]
-        : [
-            ["zenity", "--file-selection", "--title=Select a dimos recording", "--file-filter=recordings (*.db) | *.db", "--file-filter=all | *"],
-            ["kdialog", "--getopenfilename", HOME, "*.db"],
-        ]
-    for (const argv of attempts) {
-        let output
-        try {
-            output = await new Deno.Command(argv[0], { args: argv.slice(1), stdout: "piped", stderr: "piped" }).output()
-        } catch {
-            continue   // picker binary not installed — try the next one
+// One directory listing for the frontend's in-page file browser. A dropped File
+// in the webview is bytes-only (the SDK strips the path at v0.3.0) and recordings
+// are far too big to cross the app bus, so the frontend browses by path and sends
+// back the one it wants opened. This replaces a native dialog spawned by the
+// backend, which surfaced unreliably from the desktop's background service and
+// needed a different picker binary per platform.
+async function listDir(dir) {
+    const path = dir && dir !== "~" ? dir.replace(/^~(?=\/|$)/, HOME) : HOME
+    const dirs = []
+    const files = []
+    for await (const entry of Deno.readDir(path)) {
+        if (entry.name.startsWith(".")) {
+            continue
         }
-        if (!output.success) {
-            return null   // user cancelled the dialog
-        }
-        const path = new TextDecoder().decode(output.stdout).trim()
-        if (path) {
-            return path
+        const child = `${path}/${entry.name}`
+        if (entry.isDirectory) {
+            dirs.push({ name: entry.name, path: child })
+        } else if (entry.isFile && entry.name.endsWith(".db")) {
+            let size = 0
+            let mtime = 0
+            try {
+                const info = await Deno.stat(child)
+                size = info.size
+                mtime = info.mtime ? info.mtime.getTime() : 0
+            } catch { /* stat raced with delete — list it anyway */ }
+            files.push({ name: entry.name, path: child, size, mtime })
         }
     }
-    return null
+    dirs.sort((a, b) => a.name.localeCompare(b.name))
+    files.sort((a, b) => a.name.localeCompare(b.name))
+    const parent = path === "/" ? null : path.slice(0, path.lastIndexOf("/")) || "/"
+    return { dir: path, parent, dirs, files }
 }
 // Drag-drop may only give us a basename; resolve it against the known roots.
 async function resolveRecording(nameOrPath) {
@@ -996,12 +1001,12 @@ dimApp.onReceive(async (kind, payload) => {
         dimApp.send("recordings", { recordings: await listRecordings(), recent: await recentRecordings() })
     } else if (kind === "open") {
         await openRecording(payload?.path || payload?.name || "")
-    } else if (kind === "pickFile") {
-        const path = await pickFileNative()
-        if (path) {
-            await openRecording(path)
-        } else {
-            dimApp.send("pickCancelled", {})
+    } else if (kind === "listDir") {
+        const dir = payload?.dir
+        try {
+            dimApp.send("dirListing", await listDir(dir))
+        } catch (err) {
+            dimApp.send("dirListing", { dir: dir || "", parent: null, dirs: [], files: [], error: String(err?.message || err) })
         }
     } else if (kind === "play") {
         startPlaying()

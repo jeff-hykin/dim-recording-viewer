@@ -45,7 +45,10 @@ too large to send over the app bus, so:
 
 - **Drag-drop** hands the backend the file *name*, which it resolves against the
   known recording folders (`~/datasets`, `~/datasets/go2_recordings`, …).
-- **Browse** asks the backend to open a native file dialog (`osascript` on
-  macOS, `zenity`/`kdialog` on Linux) and open the chosen path directly.
+- **Browse** opens an in-page file browser that walks directories via the
+  backend's `listDir` message. It replaces a native dialog, which surfaced
+  unreliably from the desktop's background service and needed a different
+  picker binary per platform. An `<input type="file">` can't be used — the
+  browser hands back bytes, never a path.
 
 Either way the backend only ever holds a filesystem path; the bytes stay on disk.
