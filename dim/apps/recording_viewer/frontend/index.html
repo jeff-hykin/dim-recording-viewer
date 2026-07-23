@@ -175,13 +175,68 @@
   .row .agg-btn { font: inherit; font-size: 13px; line-height: 1; color: var(--muted-fg); background: none; border: none;
     border-radius: 999px; padding: 1px 5px; cursor: pointer; flex: none; }
   .row .agg-btn:hover { color: var(--fg); background: var(--secondary); }
-  #agg-menu { position: absolute; z-index: 10; display: none; padding: 5px; min-width: 150px;
-    background: color-mix(in oklch, var(--card) 96%, transparent); border: 1px solid var(--border);
-    border-radius: var(--radius); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); }
-  #agg-menu button { display: block; width: 100%; text-align: left; font: inherit; font-size: 11.5px; color: var(--fg);
-    background: none; border: none; border-radius: var(--radius-sm); padding: 6px 8px; cursor: pointer; }
-  #agg-menu button:hover { background: var(--secondary); }
-  #agg-menu button:disabled { color: var(--muted-fg); cursor: default; background: none; }
+  #agg-backdrop { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+    background: color-mix(in oklch, #000 42%, transparent); backdrop-filter: blur(2px); }
+  #agg-modal { width: 320px; max-width: calc(100vw - 32px); padding: 18px; border-radius: var(--radius-lg);
+    background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow-lg); }
+  #agg-modal .am-title { font-size: 15px; font-weight: 650; color: var(--fg); }
+  #agg-modal .am-sub { font-family: var(--mono); font-size: 11px; color: var(--muted-fg); margin: 2px 0 14px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #agg-modal .am-opt { display: flex; align-items: flex-start; gap: 9px; padding: 8px; cursor: pointer;
+    border-radius: var(--radius); border: 1px solid transparent; }
+  #agg-modal .am-opt:hover { background: var(--accent); }
+  #agg-modal .am-opt input { margin-top: 2px; cursor: pointer; }
+  #agg-modal .am-opt-text { display: flex; flex-direction: column; gap: 1px; }
+  #agg-modal .am-opt-text b { font-size: 12.5px; font-weight: 600; color: var(--fg); }
+  #agg-modal .am-opt-text em { font-style: normal; font-size: 10.5px; color: var(--muted-fg); }
+  #agg-modal .am-subopt { display: flex; align-items: center; gap: 8px; margin: 2px 0 0 34px;
+    font-family: var(--mono); font-size: 11px; color: var(--muted-fg); }
+  #agg-modal .am-subopt input { width: 58px; font: inherit; font-size: 11px; text-align: right;
+    padding: 3px 6px; border-radius: var(--radius); border: 1px solid var(--border);
+    background: var(--card); color: var(--fg); }
+  #agg-modal .am-subopt input:disabled { opacity: 0.4; }
+  #agg-modal .am-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  #agg-modal .am-actions button { font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+    border-radius: var(--radius); padding: 7px 15px; border: 1px solid var(--border); background: var(--card); color: var(--fg); }
+  #agg-modal .am-actions button:hover { background: var(--accent); }
+  #agg-modal .am-actions .am-primary { background: var(--info); border-color: var(--info); color: #fff; }
+  #agg-modal .am-actions .am-primary:hover { background: color-mix(in oklch, var(--info) 85%, #000); }
+  .agg-prog { display: inline-flex; align-items: center; gap: 8px; margin-right: 4px; }
+  .agg-prog .agg-prog-label { font-family: var(--mono); font-size: 10.5px; color: var(--muted-fg);
+    white-space: nowrap; min-width: 74px; text-align: right; }
+  .agg-prog .agg-prog-track { width: 120px; height: 6px; border-radius: 999px; overflow: hidden;
+    background: color-mix(in oklch, var(--muted-fg) 25%, transparent); }
+  .agg-prog .agg-prog-fill { display: block; height: 100%; width: 0%; border-radius: 999px;
+    background: var(--info); transition: width .18s ease; }
+  .agg-prog .agg-prog-fill.indeterminate { width: 40% !important; animation: aggIndet 1.1s ease-in-out infinite; }
+  @keyframes aggIndet { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+  .agg-prog .agg-prog-cancel { font: inherit; font-size: 11px; line-height: 1; cursor: pointer; color: var(--muted-fg);
+    background: none; border: 1px solid var(--border); border-radius: 999px; width: 18px; height: 18px; padding: 0; }
+  .agg-prog .agg-prog-cancel:hover { color: var(--fg); background: var(--accent); }
+  #tf-warn { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+    background: color-mix(in oklch, #000 55%, transparent); backdrop-filter: blur(3px); cursor: pointer; }
+  #tf-warn-card { width: 560px; max-width: calc(100vw - 40px); max-height: calc(100vh - 60px); overflow: auto;
+    padding: 20px 22px; border-radius: var(--radius-lg); background: var(--card); border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg); cursor: default; }
+  #tf-warn-card .tw-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  #tf-warn-card .tw-icon { font-size: 20px; line-height: 1; color: var(--warn, #e0a53a); }
+  #tf-warn-card .tw-title { font-size: 15px; font-weight: 650; color: var(--fg); }
+  #tf-warn-card .tw-body { font-size: 12.5px; line-height: 1.5; color: var(--fg); }
+  #tf-warn-card .tw-body p { margin: 0 0 10px; }
+  #tf-warn-card .tw-list { margin: 0 0 4px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; }
+  #tf-warn-card .tw-list li { padding: 8px 10px; border-radius: var(--radius); border: 1px solid var(--border);
+    background: color-mix(in oklch, var(--warn, #e0a53a) 9%, transparent); }
+  #tf-warn-card .tw-list b { font-family: var(--mono); font-size: 12px; }
+  #tf-warn-card .tw-list em { font-style: normal; color: var(--muted-fg); display: block; margin-top: 2px; font-size: 11.5px; }
+  #tf-warn-card .tw-tree-label { margin: 16px 0 6px; font-size: 9.5px; text-transform: uppercase;
+    letter-spacing: var(--track-label); color: var(--muted-fg); font-family: var(--mono); }
+  #tf-warn-card .tw-tree { font-family: var(--mono); font-size: 12px; line-height: 1.55; white-space: pre;
+    padding: 10px 12px; border-radius: var(--radius); background: color-mix(in oklch, var(--muted-fg) 8%, transparent);
+    border: 1px solid var(--border); overflow-x: auto; }
+  #tf-warn-card .tw-tree .tw-bad { color: #e5484d; font-weight: 700; }
+  #tf-warn-card .tw-tree .tw-bad::after { content: "  ← can't place this"; font-weight: 600; opacity: 0.85; }
+  #tf-warn-card .tw-foot { margin-top: 14px; text-align: center; font-size: 10.5px; color: var(--muted-fg);
+    font-family: var(--mono); }
   #cust-panel { position: absolute; z-index: 9; display: none; padding: 9px; min-width: 158px;
     background: color-mix(in oklch, var(--card) 96%, transparent); border: 1px solid var(--border);
     border-radius: var(--radius); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); }
@@ -221,6 +276,11 @@
   <span class="title">Recording&nbsp;Viewer</span>
   <span class="sub" id="loaded-name">· no recording</span>
   <span class="spacer"></span>
+  <span class="agg-prog" id="agg-prog" style="display:none">
+    <span class="agg-prog-label" id="agg-prog-label">aggregating…</span>
+    <span class="agg-prog-track"><span class="agg-prog-fill" id="agg-prog-fill"></span></span>
+    <button class="agg-prog-cancel" id="agg-prog-cancel" title="Cancel aggregation">✕</button>
+  </span>
   <button class="btn" id="top-view" title="Bird's-eye: look straight down on the whole map">Top-down</button>
   <button class="btn" id="fit-top" title="Auto-fit the camera to frame the whole scene">Fit view</button>
   <button class="btn" id="browse-top">Open…</button>
@@ -275,8 +335,30 @@
   <div class="cp-row"><span>Z max</span><input type="number" id="cp-zmax" class="cp-num" step="0.1" placeholder="—"></div>
 </div>
 
-<div id="agg-menu">
-  <button id="agg-run">Aggregate pointcloud</button>
+<div id="agg-backdrop" style="display:none">
+  <div id="agg-modal" role="dialog" aria-modal="true">
+    <div class="am-title">Aggregate map</div>
+    <div class="am-sub" id="agg-modal-stream"></div>
+    <label class="am-opt"><input type="checkbox" id="agg-carve" checked>
+      <span class="am-opt-text"><b>Column carving</b><em>remove floaters + everything above head height</em></span></label>
+    <div class="am-subopt">carve above <input type="number" id="agg-carve-height" value="2.13" min="0" step="0.05"> m from floor</div>
+    <label class="am-opt"><input type="checkbox" id="agg-outlier" checked>
+      <span class="am-opt-text"><b>Outlier removal</b><em>drop isolated speckle points</em></span></label>
+    <div class="am-actions">
+      <button id="agg-cancel-modal">Cancel</button>
+      <button id="agg-start" class="am-primary">Start</button>
+    </div>
+  </div>
+</div>
+
+<div id="tf-warn" style="display:none">
+  <div id="tf-warn-card">
+    <div class="tw-head"><span class="tw-icon">&#9888;</span><span class="tw-title">Some data can't be placed on the map</span></div>
+    <div class="tw-body" id="tf-warn-body"></div>
+    <div class="tw-tree-label">transform tree(s) in this recording</div>
+    <div class="tw-tree" id="tf-warn-tree"></div>
+    <div class="tw-foot">click anywhere to dismiss</div>
+  </div>
 </div>
 
 <div class="transport hidden" id="transport">
@@ -624,38 +706,101 @@ document.getElementById("stream-list").addEventListener("click", (event) => {
   const aggButton = event.target.closest(".agg-btn")
   if (aggButton) {
     event.preventDefault()
-    openAggMenu(decodeURIComponent(aggButton.dataset.agg), aggButton)
+    openAggModal(decodeURIComponent(aggButton.dataset.agg))
   }
 })
-// ── aggregate menu (⋯ on lidar rows) ──
-const aggMenu = document.getElementById("agg-menu")
-const aggRunBtn = document.getElementById("agg-run")
-let aggMenuStream = null
+// ── aggregate modal (⋯ on lidar rows) ──
+const aggBackdrop = document.getElementById("agg-backdrop")
+const aggModalStreamEl = document.getElementById("agg-modal-stream")
+const aggCarveInput = document.getElementById("agg-carve")
+const aggCarveHeightInput = document.getElementById("agg-carve-height")
+const aggOutlierInput = document.getElementById("agg-outlier")
+aggCarveInput.addEventListener("change", () => { aggCarveHeightInput.disabled = !aggCarveInput.checked })
+const aggStartBtn = document.getElementById("agg-start")
+const aggCancelModalBtn = document.getElementById("agg-cancel-modal")
+const aggProg = document.getElementById("agg-prog")
+const aggProgLabel = document.getElementById("agg-prog-label")
+const aggProgFill = document.getElementById("agg-prog-fill")
+const aggProgCancelBtn = document.getElementById("agg-prog-cancel")
+let aggModalStream = null
 let aggregating = false
-function hideAggMenu() { aggMenu.style.display = "none"; aggMenuStream = null }
-function openAggMenu(name, button) {
-  aggMenuStream = name
-  aggRunBtn.disabled = aggregating
-  aggRunBtn.textContent = aggregating ? "Aggregating…" : "Aggregate pointcloud"
-  aggMenu.style.display = "block"
-  const rect = button.getBoundingClientRect()
-  const width = aggMenu.offsetWidth, height = aggMenu.offsetHeight
-  const left = Math.min(rect.left, innerWidth - width - 8)
-  const top = rect.bottom + height + 8 > innerHeight ? rect.top - height - 6 : rect.bottom + 6
-  aggMenu.style.left = `${Math.max(8, left)}px`
-  aggMenu.style.top = `${Math.max(8, top)}px`
+let aggregatingStream = null
+function openAggModal(name) {
+  if (aggregating) { return }   // one aggregation at a time
+  aggModalStream = name
+  aggModalStreamEl.textContent = name.split("#")[0]
+  aggBackdrop.style.display = "flex"
 }
-aggRunBtn.addEventListener("click", () => {
-  if (!aggMenuStream || aggregating) { return }
+function hideAggModal() { aggBackdrop.style.display = "none"; aggModalStream = null }
+function showAggProgress(label, frac) {
+  aggProg.style.display = "inline-flex"
+  aggProgLabel.textContent = label
+  if (frac == null) {
+    aggProgFill.classList.add("indeterminate")
+  } else {
+    aggProgFill.classList.remove("indeterminate")
+    aggProgFill.style.width = `${Math.round(Math.min(1, Math.max(0, frac)) * 100)}%`
+  }
+}
+function hideAggProgress() { aggProg.style.display = "none"; aggProgFill.classList.remove("indeterminate"); aggProgFill.style.width = "0%" }
+aggStartBtn.addEventListener("click", () => {
+  if (!aggModalStream || aggregating) { return }
   aggregating = true
-  app.send("aggregate", { stream: aggMenuStream })
-  setStatus("loading", `aggregating ${aggMenuStream.split("#")[0]}…`)
-  hideAggMenu()
+  aggregatingStream = aggModalStream
+  const carveHeight = Math.max(0, parseFloat(aggCarveHeightInput.value) || 0)
+  app.send("aggregate", { stream: aggModalStream, carve: aggCarveInput.checked, outlier: aggOutlierInput.checked, carveHeight })
+  showAggProgress("starting…", 0)
+  hideAggModal()
 })
-// Dismiss the menu on any outside click.
-document.addEventListener("click", (event) => {
-  if (aggMenu.style.display === "block" && !aggMenu.contains(event.target) && !event.target.closest(".agg-btn")) { hideAggMenu() }
-}, true)
+aggCancelModalBtn.addEventListener("click", hideAggModal)
+aggBackdrop.addEventListener("click", (event) => { if (event.target === aggBackdrop) { hideAggModal() } })
+aggProgCancelBtn.addEventListener("click", () => {
+  if (!aggregating) { return }
+  app.send("aggregateCancel", { stream: aggregatingStream })
+  showAggProgress("cancelling…", null)
+  aggProgCancelBtn.disabled = true
+})
+
+// ── tf warning: ELI5 + transform tree(s) when a stream can't be placed ──
+const tfWarn = document.getElementById("tf-warn")
+const tfWarnBody = document.getElementById("tf-warn-body")
+const tfWarnTree = document.getElementById("tf-warn-tree")
+function onTfReport(payload) {
+  const problems = (payload && payload.problems) || []
+  if (!problems.length) { return }   // everything places fine → no warning
+  tfWarnBody.replaceChildren()
+  const intro = document.createElement("p")
+  intro.textContent = "The 3D view places each sensor stream by following a chain of transforms (tf) from the sensor up to the map. These streams don't have a clear chain, so they may be missing or land in the wrong spot:"
+  tfWarnBody.appendChild(intro)
+  const list = document.createElement("ul")
+  list.className = "tw-list"
+  for (const problem of problems) {
+    const item = document.createElement("li")
+    const streamName = document.createElement("b")
+    streamName.textContent = problem.stream
+    const why = document.createElement("em")
+    why.textContent = problem.detail
+    item.appendChild(streamName)
+    item.appendChild(why)
+    list.appendChild(item)
+  }
+  tfWarnBody.appendChild(list)
+  tfWarnTree.replaceChildren()
+  const treeLines = (payload && payload.treeLines) || []
+  if (!treeLines.length) {
+    tfWarnTree.textContent = payload.hasTf ? "(no transform frames found)" : "(this recording has no tf stream)"
+  } else {
+    for (const line of treeLines) {
+      const row = document.createElement("span")
+      row.textContent = line.prefix + line.frame + (line.note || "")
+      if (line.problem) { row.className = "tw-bad" }
+      tfWarnTree.appendChild(row)
+      tfWarnTree.appendChild(document.createTextNode("\n"))
+    }
+  }
+  tfWarn.style.display = "flex"
+}
+tfWarn.addEventListener("click", () => { tfWarn.style.display = "none" })
 // Apply on "change" (commit), not "input": the native color pickers fire "input"
 // continuously while dragging, and recoloring every accumulated frame per tick chugs.
 // "change" fires once the user settles on a color (and on select/number commit).
@@ -1939,6 +2084,7 @@ app.receiveRequest((kind, payload) => {
     loadedName.textContent = "· " + (payload.name || payload.path || "")
     timeline = { t0: payload.t0, t1: payload.t1, t: payload.t0, playing: false }
     overlay.classList.add("hidden"); transport.classList.remove("hidden"); panel.style.display = "block"
+    tfWarn.style.display = "none"
     renderTransport(); setStatus("ready")
   }
   // A seek resets the scene but keeps the stream list + per-stream settings
@@ -1959,19 +2105,30 @@ app.receiveRequest((kind, payload) => {
   else if (kind === "path") { onPath(payload) }
   else if (kind === "frame") { onFrame(payload) }
   else if (kind === "aggregateProgress") {
-    const label = payload.phase === "voxelizing" ? "voxelizing map…"
-      : payload.phase === "reloading" ? "reloading…"
-      : `aggregating ${payload.stream.split("#")[0]}… ${payload.done}/${payload.total}`
-    setStatus("loading", label)
+    if (payload.phase === "scanning") {
+      const frac = payload.total > 0 ? payload.done / payload.total : null
+      showAggProgress(payload.total > 0 ? `reading ${Math.round((frac || 0) * 100)}%` : "reading…", frac)
+    } else if (payload.phase === "outlier") { showAggProgress("cleaning…", null) }
+    else if (payload.phase === "carving") { showAggProgress("carving…", null) }
+    else if (payload.phase === "voxelizing") { showAggProgress("building…", null) }
+    else if (payload.phase === "reloading") { showAggProgress("reloading…", null) }
   }
   else if (kind === "aggregateDone") {
-    aggregating = false
+    aggregating = false; aggregatingStream = null; aggProgCancelBtn.disabled = false
+    hideAggProgress()
     setStatus("ready", `${payload.aggregated.split("#")[0]}: ${payload.points.toLocaleString()} pts`)
   }
   else if (kind === "aggregateError") {
-    aggregating = false
+    aggregating = false; aggregatingStream = null; aggProgCancelBtn.disabled = false
+    hideAggProgress()
     setStatus("error", "aggregate failed: " + (payload.message || ""))
   }
+  else if (kind === "aggregateCancelled") {
+    aggregating = false; aggregatingStream = null; aggProgCancelBtn.disabled = false
+    hideAggProgress()
+    setStatus(known.size ? "ready" : "idle")
+  }
+  else if (kind === "tfReport") { onTfReport(payload) }
   else if (kind === "error") { setStatus("error", payload.message); overlay.classList.remove("hidden") }
   else if (kind === "pickCancelled") { setStatus(known.size ? "ready" : "idle") }
 })

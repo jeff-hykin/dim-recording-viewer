@@ -400,6 +400,142 @@ function closeRecording() {
     playback.accumConfig = new Map()
 }
 
+// Frames whose data is already in world coordinates (a tf root or a conventional
+// global name). A stream in one of these needs no tf chain to be placed.
+const GLOBAL_FRAME_NAMES = /^(world|map|odom|earth|global)$/i
+
+// Read one message per stream to learn its header frame_id (cheap: one blob).
+function sampleFrameId(db, streamName) {
+    try {
+        const row = db.prepare(`SELECT data FROM "${streamName}_blob" LIMIT 1`).get()
+        if (row && row.data) {
+            return frameId(decode(asBytes(row.data)))
+        }
+    } catch { /* undecodable / no blob → unknown frame */ }
+    return ""
+}
+
+// Build a deterministic tf forest for the WHOLE recording and diagnose which
+// renderable streams (cloud / odom / path) can actually be placed in the map.
+// Returns an ELI5 report the frontend pops as a click-to-close warning whenever a
+// stream's frame can't be resolved to a single world root. Deterministic (scans the
+// tf stream directly) rather than depending on the live playhead's tf state.
+function buildTfReport(db, summary, active) {
+    const childParents = new Map()    // child frame -> Set(parent frame)
+    const parentChildren = new Map()  // parent frame -> Set(child frame)
+    const addEdge = (parent, child) => {
+        if (!parent || !child || parent === child) { return }
+        if (!childParents.has(child)) { childParents.set(child, new Set()) }
+        childParents.get(child).add(parent)
+        if (!parentChildren.has(parent)) { parentChildren.set(parent, new Set()) }
+        parentChildren.get(parent).add(child)
+    }
+    const tfNames = summary.filter((stream) => stream.kind === "tf" && stream.rows).map((stream) => stream.name)
+    for (const tfName of tfNames) {
+        let ids
+        try {
+            ids = db.prepare(`SELECT id FROM "${tfName}"`).all().map((record) => record.id)
+        } catch {
+            continue
+        }
+        // The tf structure is static, but a frame published under two parents only
+        // shows the conflict if we look at edges from across the recording. Sample
+        // evenly up to a cap so we catch every parent/child relationship cheaply.
+        const SAMPLE_CAP = 4000
+        const step = Math.max(1, Math.floor(ids.length / SAMPLE_CAP))
+        const blobStatement = db.prepare(`SELECT data FROM "${tfName}_blob" WHERE id=?`)
+        for (let i = 0; i < ids.length; i += step) {
+            const row = blobStatement.get(ids[i])
+            if (!row || !row.data) { continue }
+            let message
+            try {
+                message = decode(asBytes(row.data))
+            } catch {
+                continue
+            }
+            for (const transform of message?.transforms || []) {
+                addEdge(transform?.header?.frame_id || "", transform?.child_frame_id || "")
+            }
+        }
+    }
+
+    const allFrames = new Set()
+    for (const [child, parents] of childParents) {
+        allFrames.add(child)
+        for (const parent of parents) { allFrames.add(parent) }
+    }
+    const isRoot = (frame) => allFrames.has(frame) && !childParents.has(frame)
+    const isGlobal = (frame) => GLOBAL_FRAME_NAMES.test(frame) || isRoot(frame)
+
+    // Diagnose every renderable stream's frame.
+    const problems = []
+    const problemFrames = new Set()
+    for (const stream of active) {
+        if (stream.kind !== "cloud" && stream.kind !== "odom" && stream.kind !== "path") { continue }
+        const frame = sampleFrameId(db, stream.name)
+        if (!frame) { continue }   // frameless pose/detection streams are drawn as loose markers, not a tf failure
+        const parents = childParents.get(frame)
+        let reason = null
+        let detail = ""
+        if (!parents) {
+            if (!isGlobal(frame)) {
+                reason = "no-tf"
+                detail = `no transform found for "${frame}" — it never shows up in tf, so the viewer has nowhere to put it`
+            }
+        } else if (parents.size > 1) {
+            reason = "ambiguous"
+            detail = `"${frame}" is attached to ${parents.size} parents (${[...parents].sort().join(", ")}) — the viewer can't tell which one is the real map, so the cloud can land in the wrong place`
+        } else {
+            // Single parent: walk up the chain; flag cycles or dead-ends that never
+            // reach a world root.
+            let current = frame
+            let reachedRoot = false
+            const seen = new Set()
+            for (let guard = 0; current && guard < 64; guard++) {
+                if (seen.has(current)) { break }   // cycle
+                seen.add(current)
+                const chainParents = childParents.get(current)
+                if (!chainParents) { reachedRoot = isGlobal(current); break }
+                current = [...chainParents][0]
+            }
+            if (!reachedRoot) {
+                reason = "disconnected"
+                detail = `"${frame}" never connects up to a world/map frame`
+            }
+        }
+        if (reason) {
+            problems.push({ stream: stream.name, frame, reason, detail })
+            problemFrames.add(frame)
+        }
+    }
+
+    // Render each tree (like db_tree). A frame published under several parents shows
+    // up under each of them, which makes the conflict visible.
+    const treeLines = []
+    const renderChild = (frame, prefix, isLast, onPath) => {
+        const cycle = onPath.has(frame)
+        treeLines.push({
+            prefix: prefix + (isLast ? "└── " : "├── "),
+            frame,
+            note: cycle ? "  (cycle)" : "",
+            problem: problemFrames.has(frame),
+        })
+        if (cycle) { return }
+        const kids = [...(parentChildren.get(frame) || [])].sort()
+        const childPrefix = prefix + (isLast ? "    " : "│   ")
+        const nextPath = new Set(onPath).add(frame)
+        kids.forEach((kid, index) => renderChild(kid, childPrefix, index === kids.length - 1, nextPath))
+    }
+    const roots = [...allFrames].filter((frame) => !childParents.has(frame)).sort()
+    for (const root of roots) {
+        treeLines.push({ prefix: "", frame: root, note: "", problem: problemFrames.has(root) })
+        const kids = [...(parentChildren.get(root) || [])].sort()
+        kids.forEach((kid, index) => renderChild(kid, "", index === kids.length - 1, new Set([root])))
+    }
+
+    return { hasTf: tfNames.length > 0, treeLines, problems }
+}
+
 async function openRecording(nameOrPath) {
     const path = await resolveRecording(nameOrPath)
     if (!path) {
@@ -504,6 +640,12 @@ async function openRecording(nameOrPath) {
         duration: playback.t1 - playback.t0,
     })
     seekTo(playback.t0)   // render the opening frame but stay paused until the user hits play
+    // Warn (ELI5 + tf tree) if any renderable stream's frame can't be placed.
+    try {
+        dimApp.send("tfReport", buildTfReport(db, summary, active))
+    } catch (reportError) {
+        console.error("tf report failed:", reportError.message)
+    }
     await recordRecent(path)   // remember it as recently-opened for next time
 }
 
@@ -745,7 +887,10 @@ function selectCloudCursors(streamIndex, cursors, clamped) {
 const MAPPER_DIR = new URL("./mapper", import.meta.url).pathname
 const AGG_VOXEL = 0.05                          // voxel edge (m), matches dimos --voxel
 
-async function aggregateStream(streamName) {
+// The single in-flight aggregation, so an "aggregateCancel" bus message can kill it.
+let activeAggregate = null
+
+async function aggregateStream(streamName, options = {}) {
     if (!playback.db || !playback.path) {
         dimApp.send("aggregateError", { stream: streamName, message: "No recording open" })
         return
@@ -753,16 +898,25 @@ async function aggregateStream(streamName) {
     const aggregatedName = `${streamName}_aggregated`
 
     // Spawn the Rust mapper via `nix run`. path: reads the flake dir directly (no
-    // git-tracking requirement); it stays cached after the first build.
+    // git-tracking requirement); it stays cached after the first build. Map-cleaning
+    // filters (column carving, outlier removal) are opt-in from the aggregate modal.
+    const mapperArgs = [
+        "run", `path:${MAPPER_DIR}`, "--",
+        "--db", playback.path,
+        "--stream", streamName,
+        "--voxel", String(AGG_VOXEL),
+    ]
+    if (options.carve) {
+        mapperArgs.push("--carve")
+        if (Number.isFinite(options.carveHeight) && options.carveHeight >= 0) {
+            mapperArgs.push("--carve-height", String(options.carveHeight))
+        }
+    }
+    if (options.outlier) { mapperArgs.push("--outlier") }
     let child
     try {
         child = new Deno.Command("nix", {
-            args: [
-                "run", `path:${MAPPER_DIR}`, "--",
-                "--db", playback.path,
-                "--stream", streamName,
-                "--voxel", String(AGG_VOXEL),
-            ],
+            args: mapperArgs,
             stdout: "piped",
             stderr: "piped",
         }).spawn()
@@ -770,6 +924,7 @@ async function aggregateStream(streamName) {
         dimApp.send("aggregateError", { stream: streamName, message: `Could not launch mapper: ${spawnError.message}` })
         return
     }
+    activeAggregate = { stream: streamName, child, cancelled: false }
     dimApp.send("aggregateProgress", { stream: streamName, phase: "scanning", done: 0, total: 0 })
 
     // Forward the mapper's newline-delimited JSON progress as it streams.
@@ -793,6 +948,10 @@ async function aggregateStream(streamName) {
             }
             if (event.phase === "scanning") {
                 dimApp.send("aggregateProgress", { stream: streamName, phase: "scanning", done: event.done || 0, total: event.total || 0 })
+            } else if (event.phase === "outlier") {
+                dimApp.send("aggregateProgress", { stream: streamName, phase: "outlier", done: 0, total: 0 })
+            } else if (event.phase === "carving") {
+                dimApp.send("aggregateProgress", { stream: streamName, phase: "carving", done: 0, total: 0 })
             } else if (event.phase === "writing") {
                 dimApp.send("aggregateProgress", { stream: streamName, phase: "voxelizing", done: 0, total: 0 })
             } else if (event.phase === "done") {
@@ -805,6 +964,12 @@ async function aggregateStream(streamName) {
 
     const status = await child.status
     const stderrText = await stderrPromise
+    const wasCancelled = activeAggregate?.cancelled
+    activeAggregate = null
+    if (wasCancelled) {
+        dimApp.send("aggregateCancelled", { stream: streamName })
+        return
+    }
     if (!status.success || !donePayload) {
         dimApp.send("aggregateError", { stream: streamName, message: `Mapper failed: ${stderrText.slice(-400) || "no output"}` })
         return
@@ -814,6 +979,14 @@ async function aggregateStream(streamName) {
     dimApp.send("aggregateDone", { stream: streamName, aggregated: donePayload.aggregated || aggregatedName, points: donePayload.points || 0 })
     // Reopen so the new stream appears in the list, timeline, and viewer.
     await openRecording(playback.path)
+}
+
+function cancelAggregate(streamName) {
+    if (!activeAggregate || (streamName && activeAggregate.stream !== streamName)) { return }
+    activeAggregate.cancelled = true
+    try {
+        activeAggregate.child.kill("SIGTERM")
+    } catch { /* already exited */ }
 }
 
 // ── app bus ─────────────────────────────────────────────────────────────────
@@ -864,8 +1037,10 @@ dimApp.onReceive(async (kind, payload) => {
         }
     } else if (kind === "aggregate") {
         if (payload?.stream) {
-            await aggregateStream(String(payload.stream))
+            await aggregateStream(String(payload.stream), { carve: !!payload.carve, outlier: !!payload.outlier, carveHeight: Number(payload.carveHeight) })
         }
+    } else if (kind === "aggregateCancel") {
+        cancelAggregate(payload?.stream ? String(payload.stream) : null)
     } else if (kind === "close") {
         closeRecording()
     }

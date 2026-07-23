@@ -12,19 +12,29 @@
 // voxel aggregation. The Deno side only launches it via `nix run` and forwards
 // the progress it prints.
 //
-// Progress + result are emitted as newline-delimited JSON on stdout:
-//   {"phase":"scanning","done":N,"total":M}
+// Progress + result are emitted as newline-delimited JSON on stdout, each line
+// flushed immediately so the frontend can drive a live progress bar:
+//   {"phase":"scanning","done":N,"total":M}   (M>0 → a real fraction; the bar fills here)
+//   {"phase":"outlier"}                        (post passes are quick; shown as labels)
+//   {"phase":"carving"}
 //   {"phase":"writing"}
 //   {"phase":"done","aggregated":"<name>","points":P}
-//   {"phase":"error","message":"..."}   (also exits non-zero)
+//   {"phase":"error","message":"..."}          (also exits non-zero)
 //
 // args:
-//   --db <path>       memory2 .db to read from and write back into (required)
-//   --stream <name>   source cloud stream name (required)
-//   --voxel <meters>  voxel edge length (default 0.05, matching dimos --voxel)
-//   --out <name>      output stream name (default "<stream>_aggregated")
+//   --db <path>          memory2 .db to read from and write back into (required)
+//   --stream <name>      source cloud stream name (required)
+//   --voxel <meters>     voxel edge length (default 0.05, matching dimos --voxel)
+//   --out <name>         output stream name (default "<stream>_aggregated")
+//   --carve              enable column carving (remove floaters above a vertical gap)
+//   --carve-gap <meters> vertical gap that triggers carving (default 0.5)
+//   --carve-min-run <n>  only carve floating runs shorter than n voxels (default 4)
+//   --carve-height <m>   carve voxels more than m meters above the column floor (default 2.1336 = 7ft; 0 disables)
+//   --outlier            enable radius outlier removal (drop isolated specks)
+//   --outlier-min <n>    min occupied neighbors (3x3x3) to keep a voxel (default 3)
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::io::Write;
 use std::process::exit;
 
 use lcm_msgs::sensor_msgs::{PointCloud2, PointField};
@@ -46,6 +56,12 @@ struct Args {
     stream: String,
     voxel: f64,
     out: Option<String>,
+    carve: bool,
+    carve_gap: f64,
+    carve_min_run: usize,
+    carve_height: f64,
+    outlier: bool,
+    outlier_min: usize,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -53,18 +69,60 @@ fn parse_args() -> Result<Args, String> {
     let mut stream = None;
     let mut voxel = 0.05_f64;
     let mut out = None;
+    let mut carve = false;
+    let mut carve_gap = 0.5_f64;
+    let mut carve_min_run = 4_usize;
+    let mut carve_height = 2.1336_f64;
+    let mut outlier = false;
+    let mut outlier_min = 3_usize;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--db" => db = args.next(),
             "--stream" => stream = args.next(),
             "--out" => out = args.next(),
+            "--carve" => carve = true,
+            "--outlier" => outlier = true,
             "--voxel" => {
                 if let Some(value) = args.next() {
                     if let Ok(parsed) = value.parse::<f64>() {
                         if parsed > 0.0 {
                             voxel = parsed;
                         }
+                    }
+                }
+            }
+            "--carve-gap" => {
+                if let Some(value) = args.next() {
+                    if let Ok(parsed) = value.parse::<f64>() {
+                        if parsed > 0.0 {
+                            carve_gap = parsed;
+                        }
+                    }
+                }
+            }
+            "--carve-min-run" => {
+                if let Some(value) = args.next() {
+                    if let Ok(parsed) = value.parse::<usize>() {
+                        if parsed > 0 {
+                            carve_min_run = parsed;
+                        }
+                    }
+                }
+            }
+            "--carve-height" => {
+                if let Some(value) = args.next() {
+                    if let Ok(parsed) = value.parse::<f64>() {
+                        if parsed >= 0.0 {
+                            carve_height = parsed;
+                        }
+                    }
+                }
+            }
+            "--outlier-min" => {
+                if let Some(value) = args.next() {
+                    if let Ok(parsed) = value.parse::<usize>() {
+                        outlier_min = parsed;
                     }
                 }
             }
@@ -76,11 +134,20 @@ fn parse_args() -> Result<Args, String> {
         stream: stream.ok_or("--stream is required")?,
         voxel,
         out,
+        carve,
+        carve_gap,
+        carve_min_run,
+        carve_height,
+        outlier,
+        outlier_min,
     })
 }
 
 fn progress(json: &str) {
     println!("{json}");
+    // stdout is block-buffered when piped (as it is under the Deno launcher), so
+    // flush every line or the progress bar would only update in bursts / at the end.
+    std::io::stdout().flush().ok();
 }
 
 fn fail(message: &str) -> ! {
@@ -168,6 +235,102 @@ fn extract_xyzi(cloud: &PointCloud2) -> Vec<(f64, f64, f64, f64)> {
         out.push((x, y, z, intensity));
     }
     out
+}
+
+/// Radius outlier removal. Drop any voxel with fewer than `min_neighbors` occupied
+/// voxels in its 26-neighborhood (the 3x3x3 cube around it, minus itself). Isolated
+/// specks and thin floating strands vanish; dense surfaces (which have many in-plane
+/// neighbors) are untouched. Operates on a snapshot of occupancy so removals don't
+/// cascade within a single pass.
+fn remove_outliers(grid: &mut HashMap<(i64, i64, i64), Cell>, min_neighbors: usize) {
+    if min_neighbors == 0 {
+        return;
+    }
+    let occupied: HashSet<(i64, i64, i64)> = grid.keys().copied().collect();
+    let mut drop = Vec::new();
+    for &(x, y, z) in &occupied {
+        let mut neighbors = 0usize;
+        'count: for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    if dx == 0 && dy == 0 && dz == 0 {
+                        continue;
+                    }
+                    if occupied.contains(&(x + dx, y + dy, z + dz)) {
+                        neighbors += 1;
+                        if neighbors >= min_neighbors {
+                            break 'count;
+                        }
+                    }
+                }
+            }
+        }
+        if neighbors < min_neighbors {
+            drop.push((x, y, z));
+        }
+    }
+    for key in drop {
+        grid.remove(&key);
+    }
+}
+
+/// Column carving. For each (x,y) column, split the occupied voxels into vertical
+/// runs (groups of touching cells) and carve a run only when it BOTH floats above a
+/// gap larger than `max_gap` cells AND is short (fewer than `min_run` voxels) — the
+/// small hovering speckle clusters that outlier removal misses when they are locally
+/// coplanar. Large surfaces (ceilings, beams, walls) are long runs and survive; the
+/// lowest run in each column (ground) is always kept. Conservative by design so it
+/// cleans clutter without gutting real structure.
+///
+/// If `max_height` > 0, every voxel more than `max_height` cells above its column's
+/// lowest occupied voxel is also carved — a flat ceiling/overhead cutoff measured from
+/// the local floor so uneven floors (ramps, steps) each keep their own head height.
+fn carve_columns(grid: &mut HashMap<(i64, i64, i64), Cell>, max_gap: i64, min_run: usize, max_height: i64) {
+    if max_gap < 1 || min_run == 0 {
+        return;
+    }
+    let mut columns: HashMap<(i64, i64), Vec<i64>> = HashMap::new();
+    for &(x, y, z) in grid.keys() {
+        columns.entry((x, y)).or_default().push(z);
+    }
+    let mut drop = Vec::new();
+    for ((x, y), mut zs) in columns {
+        zs.sort_unstable();
+        let floor = zs[0];
+        // Height cap first: anything above (floor + max_height) is overhead clutter.
+        if max_height > 0 {
+            for &z in &zs {
+                if z - floor > max_height {
+                    drop.push((x, y, z));
+                }
+            }
+        }
+        // Walk the column bottom-up, tracking the current run's start index and the
+        // gap to the previous run. Carve a completed run if it floated over a big gap
+        // and is short. The first (lowest) run never carves.
+        let mut run_start = 0usize;
+        let mut prev_run_top: Option<i64> = None;
+        let flush = |run: &[i64], prev_top: Option<i64>, drop: &mut Vec<(i64, i64, i64)>| {
+            let floating = prev_top.map_or(false, |top| run[0] - top > max_gap);
+            if floating && run.len() < min_run {
+                for &z in run {
+                    drop.push((x, y, z));
+                }
+            }
+        };
+        for i in 1..=zs.len() {
+            let boundary = i == zs.len() || zs[i] - zs[i - 1] > 1;
+            if boundary {
+                let run = &zs[run_start..i];
+                flush(run, prev_run_top, &mut drop);
+                prev_run_top = Some(zs[i - 1]);
+                run_start = i;
+            }
+        }
+    }
+    for key in drop {
+        grid.remove(&key);
+    }
 }
 
 /// Encode the aggregated voxel means into a PointCloud2 blob (x,y,z,intensity f32).
@@ -409,6 +572,26 @@ fn main() {
 
     if grid.is_empty() {
         fail("no points aggregated (empty or unreadable clouds)");
+    }
+
+    // Clean the map: drop isolated specks first (so they can't bridge column gaps),
+    // then carve floaters above vertical gaps. Both are opt-in from the modal.
+    if args.outlier {
+        progress("{\"phase\":\"outlier\"}");
+        remove_outliers(&mut grid, args.outlier_min);
+    }
+    if args.carve {
+        progress("{\"phase\":\"carving\"}");
+        let gap_cells = (args.carve_gap * inv_voxel).round() as i64;
+        let height_cells = if args.carve_height > 0.0 {
+            (args.carve_height * inv_voxel).round() as i64
+        } else {
+            0
+        };
+        carve_columns(&mut grid, gap_cells.max(1), args.carve_min_run, height_cells);
+    }
+    if grid.is_empty() {
+        fail("all points removed by carving/outlier filters (try disabling them)");
     }
     progress("{\"phase\":\"writing\"}");
 
