@@ -1908,7 +1908,10 @@ function setVisible(name, on) {
 function refreshStreams() {
   const list = document.getElementById("stream-list")
   updateToggleAllLabel()
-  if (!known.size) { list.innerHTML = '<div class="empty">none yet</div>'; return }
+  // Drop the row signature too: without it, re-opening a recording with the same
+  // stream set rebuilds an identical `rows` string, the cache short-circuits the
+  // write, and the panel stays stuck on "none yet".
+  if (!known.size) { list.dataset.sig = ""; list.innerHTML = '<div class="empty">none yet</div>'; return }
   const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, entry]) => {
     // Cloud and odom rows both open a customize popup (cloud: color/voxel/filter +
     // accumulation; odom: just accumulation). Other kinds show a plain kind tag.
