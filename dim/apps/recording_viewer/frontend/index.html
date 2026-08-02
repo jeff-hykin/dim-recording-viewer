@@ -142,12 +142,35 @@
   #ctxmenu button { display: block; width: 100%; text-align: left; font: inherit; font-size: 12px;
     color: var(--fg); background: none; border: none; border-radius: var(--radius-sm); padding: 6px 10px; cursor: pointer; }
   #ctxmenu button:hover { background: color-mix(in oklch, var(--primary) 16%, transparent); }
-  #marker-coords { position: absolute; bottom: 68px; right: 16px; z-index: 4; display: none;
+  /* bottom-right stack: marker readout above the tf tree */
+  #br-stack { position: absolute; bottom: 68px; right: 16px; z-index: 4;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  #marker-coords { display: none;
     font-family: var(--mono); font-size: 11px; color: var(--fg); letter-spacing: 0.04em; padding: 7px 11px;
     background: color-mix(in oklch, var(--card) 88%, transparent); border: 1px solid var(--border);
     border-radius: var(--radius); box-shadow: var(--shadow-md); backdrop-filter: blur(10px); }
   #marker-coords .mc-label { display: block; margin-bottom: 3px; color: var(--muted-fg); font-size: 9px;
     text-transform: uppercase; letter-spacing: var(--track-label); }
+  /* tf tree widget */
+  #tf-tree { display: none; width: 208px; overflow: hidden;
+    background: color-mix(in oklch, var(--card) 88%, transparent); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-md); backdrop-filter: blur(10px); }
+  #tf-tree .tt-head { display: flex; align-items: center; gap: 6px; padding: 7px 10px; cursor: pointer;
+    color: var(--muted-fg); font-size: 9px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: var(--track-label); user-select: none; }
+  #tf-tree .tt-head:hover { color: var(--fg); }
+  #tf-tree .tt-head::before { content: "▾"; font-size: 8px; transition: transform 0.12s; }
+  #tf-tree.collapsed .tt-head::before { transform: rotate(-90deg); }
+  #tf-tree .tt-count { margin-left: auto; font-weight: 600; letter-spacing: 0; }
+  #tf-tree-list { max-height: 220px; overflow: auto; padding: 2px 4px 6px;
+    border-top: 1px solid var(--border); }
+  #tf-tree.collapsed #tf-tree-list { display: none; }
+  #tf-tree-list .tt-row { font-family: var(--mono); font-size: 11px; color: var(--fg);
+    padding: 2px 6px; border-radius: var(--radius-sm); white-space: pre; cursor: default;
+    overflow: hidden; text-overflow: ellipsis; }
+  #tf-tree-list .tt-row:hover { background: color-mix(in oklch, var(--primary) 20%, transparent); }
+  #tf-tree-list .tt-row.root { color: var(--muted-fg); }
+  #tf-tree-list .tt-empty { color: var(--muted-fg); font-size: 11px; padding: 4px 6px; }
   /* top-slice: double-ended vertical z clip on the right edge */
   #zslice { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); z-index: 5;
     display: flex; flex-direction: column; align-items: center; gap: 8px; user-select: none; }
@@ -337,7 +360,13 @@
   <button id="ctx-place">Place marker here</button>
   <button id="ctx-clear">Clear markers</button>
 </div>
-<div id="marker-coords"><span class="mc-label">Marker · floor (m)</span><span id="marker-coords-val"></span></div>
+<div id="br-stack">
+  <div id="marker-coords"><span class="mc-label">Marker · floor (m)</span><span id="marker-coords-val"></span></div>
+  <div id="tf-tree" class="collapsed">
+    <div class="tt-head" id="tf-tree-head">TF tree<span class="tt-count" id="tf-tree-count"></span></div>
+    <div id="tf-tree-list"></div>
+  </div>
+</div>
 <div id="cust-panel">
   <span class="cp-title" id="cp-title"></span>
   <div class="cp-row"><span>Start</span><input type="range" min="0" max="359" id="cp-start" class="cp-hue"></div>
@@ -491,6 +520,9 @@ camera.up.set(0, 0, 1)
 
 // Auto-fit state (declared before the input handlers, which flip userMovedCamera).
 let userMovedCamera = false, fitDirty = false, lastFit = 0
+// Declared up here (not with the tf widget below) so the render loop, which is defined
+// before it, doesn't hit the temporal dead zone on its first synchronous run.
+let tfTreeDirty = false
 
 // ── first-person fly controls: WASD move, Q/E down/up, drag to look, right-drag
 // pan, scroll to dolly, double-click to recenter. Any manual input turns off the
@@ -1138,6 +1170,9 @@ const camposEl = document.getElementById("campos")
     if (now - lastFit > 200) { fitView(); lastFit = now; fitDirty = false }
   }
   updateCamera(Math.min(frameClock.getDelta(), 0.1))
+  // Coalesced here: a seek replays thousands of tf edges, and rebuilding the tree
+  // markup + triads per edge would stall the page.
+  if (tfTreeDirty) { tfTreeDirty = false; refreshTfTree(); syncTfAxes() }
   if (camposEl) { camposEl.textContent = ` · CAM ${camera.position.x.toFixed(1)},${camera.position.y.toFixed(1)},${camera.position.z.toFixed(1)}` }
   // Hold the last frame while a seek rebuilds so the intermediate replay (robot
   // sweeping from the start) never reaches the screen; the final state renders once.
@@ -1155,6 +1190,7 @@ function setTf(parent, child, translation, rotation) {
     { x: 1, y: 1, z: 1 })
   tf.set(child, { parent, matrix })
   tfParents.add(parent)
+  tfTreeDirty = true
 }
 function worldMatrix(frame) {
   const chain = []
@@ -1173,6 +1209,86 @@ const GLOBAL_FRAME_NAMES = /^(world|map|odom|earth|global)$/i
 function isGlobalFrame(frame) {
   return GLOBAL_FRAME_NAMES.test(frame) || (tfParents.has(frame) && !tf.has(frame))
 }
+
+// ── tf tree widget (bottom-right) ──
+// Built live from the tf stream rather than the backend's tfReport, so it tracks the
+// tree as the playhead moves. Expanding it also draws a basis triad at every frame's
+// world pose; hovering a row swells that frame's triad so it can be picked out.
+const tfTreeEl = document.getElementById("tf-tree")
+const tfTreeListEl = document.getElementById("tf-tree-list")
+const tfTreeCountEl = document.getElementById("tf-tree-count")
+const tfAxesGroup = new THREE.Group()
+tfAxesGroup.visible = false
+scene.add(tfAxesGroup)
+const tfAxes = new Map()   // frame -> triad Group
+const TF_AXIS_LEN = 0.35
+let tfHovered = null
+
+function tfTreeOpen() {
+  return !tfTreeEl.classList.contains("collapsed")
+}
+// Every frame in the tree: the children (tf keys) plus the roots (parents that are
+// never a child themselves).
+function tfFrames() {
+  const frames = new Set(tf.keys())
+  for (const parent of tfParents) { frames.add(parent) }
+  return frames
+}
+function syncTfAxes() {
+  tfAxesGroup.visible = tfTreeOpen()
+  if (!tfAxesGroup.visible) { return }
+  const live = tfFrames()
+  for (const [frame, triad] of tfAxes) {
+    if (!live.has(frame)) { tfAxesGroup.remove(triad); tfAxes.delete(frame) }
+  }
+  for (const frame of live) {
+    let triad = tfAxes.get(frame)
+    if (!triad) {
+      triad = makeAxes(TF_AXIS_LEN, TF_AXIS_LEN * 0.035)
+      triad.matrixAutoUpdate = false
+      tfAxesGroup.add(triad)
+      tfAxes.set(frame, triad)
+    }
+    // A hovered frame's triad is drawn several times bigger so it stands out in a
+    // scene where the real triads are deliberately small.
+    const scale = frame === tfHovered ? 3.5 : 1
+    triad.matrix.copy(worldMatrix(frame)).scale(new THREE.Vector3(scale, scale, scale))
+  }
+}
+function refreshTfTree() {
+  const roots = [...tfFrames()].filter((frame) => !tf.has(frame)).sort()
+  tfTreeCountEl.textContent = tf.size ? String(tfFrames().size) : ""
+  tfTreeEl.style.display = tf.size ? "block" : "none"
+  if (!tfTreeOpen()) { return }
+  const childrenOf = new Map()
+  for (const [child, edge] of tf) {
+    if (!childrenOf.has(edge.parent)) { childrenOf.set(edge.parent, []) }
+    childrenOf.get(edge.parent).push(child)
+  }
+  const rows = []
+  const walk = (frame, depth, isRoot) => {
+    if (depth > 32) { return }
+    rows.push(`<div class="tt-row${isRoot ? " root" : ""}" data-frame="${encodeURIComponent(frame)}">` +
+      `${"  ".repeat(depth)}${frame.replace(/[&<>]/g, "")}</div>`)
+    for (const child of (childrenOf.get(frame) || []).sort()) { walk(child, depth + 1, false) }
+  }
+  for (const root of roots) { walk(root, 0, true) }
+  tfTreeListEl.innerHTML = rows.length ? rows.join("") : '<div class="tt-empty">no transforms yet</div>'
+}
+document.getElementById("tf-tree-head").addEventListener("click", () => {
+  tfTreeEl.classList.toggle("collapsed")
+  tfHovered = null
+  refreshTfTree()
+  syncTfAxes()
+})
+tfTreeListEl.addEventListener("mouseover", (event) => {
+  const row = event.target.closest(".tt-row")
+  const frame = row ? decodeURIComponent(row.dataset.frame) : null
+  if (frame !== tfHovered) { tfHovered = frame; syncTfAxes() }
+})
+tfTreeListEl.addEventListener("mouseleave", () => {
+  if (tfHovered) { tfHovered = null; syncTfAxes() }
+})
 
 function b64ToBuffer(b64) {
   const binary = atob(b64); const bytes = new Uint8Array(binary.length)
@@ -1870,6 +1986,10 @@ function clearScene() {
   paths.clear()
   tf.clear()
   tfParents.clear()
+  for (const triad of tfAxes.values()) { tfAxesGroup.remove(triad) }
+  tfAxes.clear()
+  tfHovered = null
+  tfTreeDirty = true
   lastOdomWorld = null
 }
 
