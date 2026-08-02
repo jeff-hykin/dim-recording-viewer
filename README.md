@@ -1,7 +1,7 @@
 # dim-recording-viewer
 
 A [DimOS dashboard](https://github.com/jeff-hykin/dim-app) app that renders a
-**recorded** DimOS stack in 3D. Drop (or browse to) a dimos "memory2" `.db`
+**recorded** DimOS stack in 3D. Drop (or browse to) a dimos "memory2" `.db` / `.mcap`
 recording and it plays back as a live 3D scene — the same way
 [dim-live-viewer](https://github.com/jeff-hykin/dim-live-viewer) shows a *running*
 stack, but sourced from a file on disk instead of the bridge.
@@ -15,6 +15,12 @@ stack, but sourced from a file on disk instead of the bridge.
 Streams are discovered from the recording's `_streams` table and drawn by
 **duck-typing the decoded message** — there is no hardcoded topic list.
 
+An `.mcap` opens the same way. It holds the same messages CDR-encoded against
+ros2msg schemas in compressed chunks, and its summary section indexes every message
+by (chunk, byte offset) — so the timeline is built from the index alone and payloads
+are decompressed and decoded one at a time, exactly like the `.db` path. Aggregation
+is the one thing it can't do: the Rust mapper reads and writes memory2 streams.
+
 A `.pc2.lcm` file (one bare LCM-encoded `PointCloud2` — an aggregated global map or
 relocalization premap) opens the same way. It has no timeline, so it loads as a
 single static cloud with the transport bar parked at zero.
@@ -25,7 +31,7 @@ single static cloud with the transport bar parked at zero.
 dim install https://github.com/jeff-hykin/dim-recording-viewer
 ```
 
-Open **Mapper** from the desktop rail, then drop a `.db` / `.pc2.lcm` file or click
+Open **Mapper** from the desktop rail, then drop a `.db` / `.mcap` / `.pc2.lcm` file or click
 **Browse**.
 
 ## How it works

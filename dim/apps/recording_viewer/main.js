@@ -1,5 +1,5 @@
 // Mapper — backend half. Renders a 3D scene from a RECORDED dimos
-// "memory2" .db file (SQLite) instead of a live bridge. It opens a recording,
+// "memory2" .db file (SQLite) or .mcap instead of a live bridge. It opens a recording,
 // builds one merged timeline across every stream, decodes each message on demand
 // (@dimos/msgs), and forwards compact frames to the 3D frontend as a scrubbable
 // playhead advances. Same frame vocabulary as dim-live-viewer
@@ -232,7 +232,7 @@ function frameForMessage(streamName, kind, message) {
 // like a recording that happens to hold a single static cloud.
 const STATIC_CLOUD_SUFFIX = ".pc2.lcm"
 function isRecordingFile(name) {
-    return name.endsWith(".db") || name.endsWith(STATIC_CLOUD_SUFFIX)
+    return name.endsWith(".db") || name.endsWith(".mcap") || name.endsWith(STATIC_CLOUD_SUFFIX)
 }
 
 async function scanDir(root, depth, seen, found) {
@@ -370,9 +370,11 @@ const playback = {
     path: null,
     streamNames: [],                 // stream-index -> name
     blobStatements: [],              // stream-index -> prepared blob SELECT (or null)
+    mcap: null,                      // .mcap only: { file, chunkIndexes, readers, chunkCache }
     count: 0,
     tsArray: new Float64Array(0),
-    idArray: new Int32Array(0),
+    idArray: new Int32Array(0),      // .db: blob row id — .mcap: byte offset of the message inside its chunk
+    chunkArray: new Int32Array(0),   // .mcap only: which chunk holds each message
     streamArray: new Int32Array(0),
     kindArray: new Uint8Array(0),
     order: new Uint32Array(0),       // indices into the above, sorted by ts
@@ -398,13 +400,20 @@ function closeRecording() {
             playback.db.close()
         } catch { /* already closed */ }
     }
+    if (playback.mcap) {
+        try {
+            playback.mcap.file.close()
+        } catch { /* already closed */ }
+    }
     playback.db = null
+    playback.mcap = null
     playback.path = null
     playback.streamNames = []
     playback.blobStatements = []
     playback.count = 0
     playback.tsArray = new Float64Array(0)
     playback.idArray = new Int32Array(0)
+    playback.chunkArray = new Int32Array(0)
     playback.streamArray = new Int32Array(0)
     playback.kindArray = new Uint8Array(0)
     playback.order = new Uint32Array(0)
@@ -419,15 +428,41 @@ function closeRecording() {
 // global name). A stream in one of these needs no tf chain to be placed.
 const GLOBAL_FRAME_NAMES = /^(world|map|odom|earth|global)$/i
 
-// Read one message per stream to learn its header frame_id (cheap: one blob).
-function sampleFrameId(db, streamName) {
-    try {
-        const row = db.prepare(`SELECT data FROM "${streamName}_blob" LIMIT 1`).get()
-        if (row && row.data) {
-            return frameId(decode(asBytes(row.data)))
-        }
-    } catch { /* undecodable / no blob → unknown frame */ }
-    return ""
+// How buildTfReport gets at messages, so the report works for any container.
+// `tfMessages` walks a tf stream's decoded messages (already thinned — the tf
+// structure is static, so a sample is enough) and `frameOf` reads one message
+// per stream to learn its header frame_id.
+function sqliteTfSource(db) {
+    return {
+        *tfMessages(streamName) {
+            let ids
+            try {
+                ids = db.prepare(`SELECT id FROM "${streamName}"`).all().map((record) => record.id)
+            } catch {
+                return
+            }
+            // A frame published under two parents only shows the conflict if we look at
+            // edges from across the recording, so sample evenly rather than head-first.
+            const step = Math.max(1, Math.floor(ids.length / 4000))
+            const blobStatement = db.prepare(`SELECT data FROM "${streamName}_blob" WHERE id=?`)
+            for (let i = 0; i < ids.length; i += step) {
+                const row = blobStatement.get(ids[i])
+                if (!row || !row.data) { continue }
+                try {
+                    yield decode(asBytes(row.data))
+                } catch { /* undecodable message → skip */ }
+            }
+        },
+        frameOf(streamName) {
+            try {
+                const row = db.prepare(`SELECT data FROM "${streamName}_blob" LIMIT 1`).get()
+                if (row && row.data) {
+                    return frameId(decode(asBytes(row.data)))
+                }
+            } catch { /* undecodable / no blob → unknown frame */ }
+            return ""
+        },
+    }
 }
 
 // Build a deterministic tf forest for the WHOLE recording and diagnose which
@@ -435,7 +470,7 @@ function sampleFrameId(db, streamName) {
 // Returns an ELI5 report the frontend pops as a click-to-close warning whenever a
 // stream's frame can't be resolved to a single world root. Deterministic (scans the
 // tf stream directly) rather than depending on the live playhead's tf state.
-function buildTfReport(db, summary, active) {
+function buildTfReport(source, summary, active) {
     const childParents = new Map()    // child frame -> Set(parent frame)
     const parentChildren = new Map()  // parent frame -> Set(child frame)
     const addEdge = (parent, child) => {
@@ -447,27 +482,7 @@ function buildTfReport(db, summary, active) {
     }
     const tfNames = summary.filter((stream) => stream.kind === "tf" && stream.rows).map((stream) => stream.name)
     for (const tfName of tfNames) {
-        let ids
-        try {
-            ids = db.prepare(`SELECT id FROM "${tfName}"`).all().map((record) => record.id)
-        } catch {
-            continue
-        }
-        // The tf structure is static, but a frame published under two parents only
-        // shows the conflict if we look at edges from across the recording. Sample
-        // evenly up to a cap so we catch every parent/child relationship cheaply.
-        const SAMPLE_CAP = 4000
-        const step = Math.max(1, Math.floor(ids.length / SAMPLE_CAP))
-        const blobStatement = db.prepare(`SELECT data FROM "${tfName}_blob" WHERE id=?`)
-        for (let i = 0; i < ids.length; i += step) {
-            const row = blobStatement.get(ids[i])
-            if (!row || !row.data) { continue }
-            let message
-            try {
-                message = decode(asBytes(row.data))
-            } catch {
-                continue
-            }
+        for (const message of source.tfMessages(tfName)) {
             for (const transform of message?.transforms || []) {
                 addEdge(transform?.header?.frame_id || "", transform?.child_frame_id || "")
             }
@@ -487,7 +502,7 @@ function buildTfReport(db, summary, active) {
     const problemFrames = new Set()
     for (const stream of active) {
         if (stream.kind !== "cloud" && stream.kind !== "odom" && stream.kind !== "path") { continue }
-        const frame = sampleFrameId(db, stream.name)
+        const frame = source.frameOf(stream.name)
         if (!frame) { continue }   // frameless pose/detection streams are drawn as loose markers, not a tf failure
         const parents = childParents.get(frame)
         let reason = null
@@ -552,9 +567,9 @@ function buildTfReport(db, summary, active) {
 }
 
 // One bare PointCloud2 file: the whole thing is a single message, so it loads as a
-// zero-length timeline with one cloud already emitted. `playback.db` stays null, which
-// makes seek/play no-ops — correct for a static map, and it also keeps the aggregation
-// handler (which needs a stream to walk) from accepting it.
+// zero-length timeline with one cloud already emitted. That empty timeline makes
+// seek/play no-ops — correct for a static map — and `playback.db` stays null, which
+// keeps the aggregation handler (which needs a stream to walk) from accepting it.
 async function openStaticCloud(path) {
     closeRecording()
     let message
@@ -597,6 +612,282 @@ function replayStaticCloud() {
     dimApp.send("cloud", playback.staticCloud)
 }
 
+// ── .mcap recordings ───────────────────────────────────────────────────────
+// An mcap holds the same messages as the .db, but CDR-encoded against ros2msg
+// schemas and packed into compressed chunks. Its summary section indexes every
+// message by (chunk, byte offset) without touching any payload, which is the
+// same bargain the .db gives us: build the whole timeline up front, then
+// decompress and decode exactly one message when the playhead reaches it.
+//
+// Everything below the open is synchronous — file reads via readSync and the
+// decompressors are sync once their wasm is up — so the playhead path stays
+// sync like the sqlite one.
+
+// Loaded on first .mcap open so a .db-only session never pays for the npm graph.
+let mcapDeps = null
+async function loadMcapDeps() {
+    if (!mcapDeps) {
+        const [core, support, rosmsg, cdr] = await Promise.all([
+            import("npm:@mcap/core@2"),
+            import("npm:@mcap/support@1"),
+            import("npm:@foxglove/rosmsg@5"),
+            import("npm:@foxglove/rosmsg2-serialization@3"),
+        ])
+        mcapDeps = {
+            McapIndexedReader: core.McapIndexedReader,
+            parseSchema: rosmsg.parse,
+            MessageReader: cdr.MessageReader,
+            decompressHandlers: await support.loadDecompressHandlers(),
+        }
+    }
+    return mcapDeps
+}
+
+const MCAP_OP_MESSAGE = 0x05
+const MCAP_OP_MESSAGE_INDEX = 0x07
+const MCAP_CHUNK_CACHE = 6   // decompressed chunks held at once (a couple MB each)
+
+function readAtSync(file, offset, length) {
+    const out = new Uint8Array(length)
+    file.seekSync(offset, Deno.SeekMode.Start)
+    let filled = 0
+    while (filled < length) {
+        const read = file.readSync(out.subarray(filled))
+        if (!read) { break }
+        filled += read
+    }
+    return filled === length ? out : out.subarray(0, filled)
+}
+
+// Every message in one chunk, as (channel, log time, offset into the chunk's
+// decompressed records). Read from the chunk's message-index records, which sit
+// right after the chunk itself — so building a timeline never decompresses.
+function forEachIndexedMessage(file, chunkIndex, onMessage) {
+    const bytes = readAtSync(file, Number(chunkIndex.chunkStartOffset + chunkIndex.chunkLength), Number(chunkIndex.messageIndexLength))
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    let at = 0
+    while (at + 9 <= bytes.byteLength) {
+        const recordLength = Number(view.getBigUint64(at + 1, true))
+        if (view.getUint8(at) === MCAP_OP_MESSAGE_INDEX) {
+            const channelId = view.getUint16(at + 9, true)
+            const arrayLength = view.getUint32(at + 11, true)
+            for (let cursor = at + 15; cursor + 16 <= at + 15 + arrayLength; cursor += 16) {
+                onMessage(channelId, Number(view.getBigUint64(cursor, true)), Number(view.getBigUint64(cursor + 8, true)))
+            }
+        }
+        at += 9 + recordLength
+    }
+}
+
+function chunkRecords(mcap, chunkNumber) {
+    const cached = mcap.chunkCache.get(chunkNumber)
+    if (cached) {
+        mcap.chunkCache.delete(chunkNumber)   // reinsert to move it to the young end
+        mcap.chunkCache.set(chunkNumber, cached)
+        return cached
+    }
+    const chunkIndex = mcap.chunkIndexes[chunkNumber]
+    const bytes = readAtSync(mcap.file, Number(chunkIndex.chunkStartOffset), Number(chunkIndex.chunkLength))
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    let cursor = 9 + 8 + 8 + 8 + 4   // record header, message start/end time, uncompressed size, crc
+    const nameLength = view.getUint32(cursor, true)
+    cursor += 4
+    const compression = new TextDecoder().decode(bytes.subarray(cursor, cursor + nameLength))
+    cursor += nameLength
+    const payloadLength = Number(view.getBigUint64(cursor, true))
+    cursor += 8
+    const payload = bytes.subarray(cursor, cursor + payloadLength)
+    const records = compression ? mcapDeps.decompressHandlers[compression](payload, chunkIndex.uncompressedSize) : payload
+    mcap.chunkCache.set(chunkNumber, records)
+    if (mcap.chunkCache.size > MCAP_CHUNK_CACHE) {
+        mcap.chunkCache.delete(mcap.chunkCache.keys().next().value)
+    }
+    return records
+}
+
+function decodeMcapMessage(mcap, chunkNumber, offset) {
+    let records
+    try {
+        records = chunkRecords(mcap, chunkNumber)
+    } catch {
+        return null   // unsupported compression / truncated chunk
+    }
+    const view = new DataView(records.buffer, records.byteOffset, records.byteLength)
+    if (offset + 9 > records.byteLength || view.getUint8(offset) !== MCAP_OP_MESSAGE) {
+        return null
+    }
+    const recordLength = Number(view.getBigUint64(offset + 1, true))
+    const reader = mcap.readers.get(view.getUint16(offset + 9, true))
+    if (!reader) {
+        return null
+    }
+    const dataStart = offset + 9 + 2 + 4 + 8 + 8   // channel id, sequence, log time, publish time
+    try {
+        return reader.readMessage(records.subarray(dataStart, offset + 9 + recordLength))
+    } catch {
+        return null
+    }
+}
+
+// ROS2 topics are "/name" (dimos publishes under "rt/name"); memory2 flattens
+// both the same way, so an mcap and its .db sibling agree on stream names.
+function streamNameForTopic(topic) {
+    return topic.replace(/^\/+/, "").replace(/^rt\//, "").replace(/\//g, "_")
+}
+
+// Same shape as sqliteTfSource, over the timeline we just built. Its tf sample is
+// far smaller because every sample lands in a different chunk to decompress.
+function mcapTfSource() {
+    const cursorsFor = (streamName) => {
+        const streamIndex = playback.streamNames.indexOf(streamName)
+        const cursors = []
+        for (let cursor = 0; cursor < playback.count; cursor++) {
+            if (playback.streamArray[playback.order[cursor]] === streamIndex) { cursors.push(cursor) }
+        }
+        return cursors
+    }
+    return {
+        *tfMessages(streamName) {
+            const cursors = cursorsFor(streamName)
+            const step = Math.max(1, Math.floor(cursors.length / 240))
+            for (let i = 0; i < cursors.length; i += step) {
+                const message = decodeAt(cursors[i])
+                if (message) { yield message }
+            }
+        },
+        frameOf(streamName) {
+            const cursors = cursorsFor(streamName)
+            return cursors.length ? frameId(decodeAt(cursors[0])) : ""
+        },
+    }
+}
+
+async function openMcap(path) {
+    closeRecording()
+    let deps
+    try {
+        deps = await loadMcapDeps()
+    } catch (loadError) {
+        dimApp.send("error", { message: `Could not load the mcap reader: ${loadError.message}` })
+        return
+    }
+    let file
+    let reader
+    try {
+        file = Deno.openSync(path, { read: true })
+        const size = BigInt(Deno.statSync(path).size)
+        reader = await deps.McapIndexedReader.Initialize({
+            readable: {
+                size: () => Promise.resolve(size),
+                read: (offset, length) => Promise.resolve(readAtSync(file, Number(offset), Number(length))),
+            },
+            decompressHandlers: deps.decompressHandlers,
+        })
+    } catch (openError) {
+        try {
+            file?.close()
+        } catch { /* never opened */ }
+        dimApp.send("error", { message: `Failed to open ${path}: ${openError.message}` })
+        return
+    }
+
+    // Pass 1: one stream per channel. Counts come from the summary's statistics;
+    // a file written without them gets counted off the message indexes instead.
+    const counts = new Map()
+    for (const [channelId, count] of reader.statistics?.channelMessageCounts ?? []) {
+        counts.set(channelId, Number(count))
+    }
+    if (!counts.size) {
+        for (const chunkIndex of reader.chunkIndexes) {
+            forEachIndexedMessage(file, chunkIndex, (channelId) => counts.set(channelId, (counts.get(channelId) ?? 0) + 1))
+        }
+    }
+    const summary = []
+    const active = []
+    const readers = new Map()
+    for (const [channelId, channel] of reader.channelsById) {
+        const schema = reader.schemasById.get(channel.schemaId)
+        const typeName = (schema?.name || "").split("/").pop() || "unknown"
+        const kind = kindOfType(typeName)
+        const count = counts.get(channelId) ?? 0
+        const name = streamNameForTopic(channel.topic)
+        summary.push({ name, type: typeName, kind, rows: count })
+        if (!kind || !count || channel.messageEncoding !== "cdr" || schema?.encoding !== "ros2msg") {
+            continue
+        }
+        try {
+            readers.set(channelId, new deps.MessageReader(deps.parseSchema(new TextDecoder().decode(schema.data), { ros2: true })))
+        } catch {
+            continue   // schema we can't parse — the stream still shows up, it just never decodes
+        }
+        active.push({ name, kind, kindCode: KIND_CODES[kind], count, channelId })
+    }
+
+    // Pass 2: fill the timeline from the message indexes (no payload is touched).
+    let total = 0
+    for (const stream of active) {
+        total += stream.count
+    }
+    const tsArray = new Float64Array(total)
+    const idArray = new Int32Array(total)
+    const chunkArray = new Int32Array(total)
+    const streamArray = new Int32Array(total)
+    const kindArray = new Uint8Array(total)
+    const streamOfChannel = new Map(active.map((stream, streamIndex) => [stream.channelId, streamIndex]))
+    let write = 0
+    for (let chunkNumber = 0; chunkNumber < reader.chunkIndexes.length; chunkNumber++) {
+        forEachIndexedMessage(file, reader.chunkIndexes[chunkNumber], (channelId, logTime, offset) => {
+            const streamIndex = streamOfChannel.get(channelId)
+            if (streamIndex === undefined || write >= total) {
+                return
+            }
+            tsArray[write] = logTime / 1e9
+            idArray[write] = offset
+            chunkArray[write] = chunkNumber
+            streamArray[write] = streamIndex
+            kindArray[write] = active[streamIndex].kindCode
+            write++
+        })
+    }
+
+    const order = new Uint32Array(write)
+    for (let i = 0; i < write; i++) {
+        order[i] = i
+    }
+    order.sort((a, b) => tsArray[a] - tsArray[b])
+
+    playback.mcap = { file, chunkIndexes: reader.chunkIndexes, readers, chunkCache: new Map() }
+    playback.path = path
+    playback.streamNames = active.map((stream) => stream.name)
+    playback.count = write
+    playback.tsArray = tsArray
+    playback.idArray = idArray
+    playback.chunkArray = chunkArray
+    playback.streamArray = streamArray
+    playback.kindArray = kindArray
+    playback.order = order
+    playback.t0 = write ? tsArray[order[0]] : 0
+    playback.t1 = write ? tsArray[order[write - 1]] : 0
+    playback.cursor = 0
+    playback.playhead = playback.t0
+
+    dimApp.send("loaded", {
+        path,
+        name: path.split("/").pop(),
+        streams: summary,
+        t0: playback.t0,
+        t1: playback.t1,
+        duration: playback.t1 - playback.t0,
+    })
+    seekTo(playback.t0)
+    try {
+        dimApp.send("tfReport", buildTfReport(mcapTfSource(), summary, active))
+    } catch (reportError) {
+        console.error("tf report failed:", reportError.message)
+    }
+    await recordRecent(path)
+}
+
 async function openRecording(nameOrPath) {
     const path = await resolveRecording(nameOrPath)
     if (!path) {
@@ -606,6 +897,10 @@ async function openRecording(nameOrPath) {
     dimApp.send("loading", { path, name: path.split("/").pop() })
     if (path.endsWith(STATIC_CLOUD_SUFFIX)) {
         await openStaticCloud(path)
+        return
+    }
+    if (path.endsWith(".mcap")) {
+        await openMcap(path)
         return
     }
     closeRecording()
@@ -707,7 +1002,7 @@ async function openRecording(nameOrPath) {
     seekTo(playback.t0)   // render the opening frame but stay paused until the user hits play
     // Warn (ELI5 + tf tree) if any renderable stream's frame can't be placed.
     try {
-        dimApp.send("tfReport", buildTfReport(db, summary, active))
+        dimApp.send("tfReport", buildTfReport(sqliteTfSource(db), summary, active))
     } catch (reportError) {
         console.error("tf report failed:", reportError.message)
     }
@@ -717,6 +1012,9 @@ async function openRecording(nameOrPath) {
 // Decode the message at sorted position `cursor` (blob read straight off disk).
 function decodeAt(sortedCursor) {
     const index = playback.order[sortedCursor]
+    if (playback.mcap) {
+        return decodeMcapMessage(playback.mcap, playback.chunkArray[index], playback.idArray[index])
+    }
     const statement = playback.blobStatements[playback.streamArray[index]]
     if (!statement) {
         return null
@@ -771,7 +1069,7 @@ function advanceTo(targetTs) {
 }
 
 function tick() {
-    if (!playback.playing || !playback.db) {
+    if (!playback.playing || !playback.count) {
         return
     }
     const now = performance.now()
@@ -785,7 +1083,7 @@ function tick() {
 }
 
 function startPlaying() {
-    if (!playback.db) {
+    if (!playback.count) {
         return
     }
     if (playback.cursor >= playback.count) {
@@ -811,7 +1109,7 @@ function pausePlaying() {
 // (Emitting all clouds at the end would place them with the final pose, stacking an
 // accumulated cloud on top of itself — it would look like a single instantaneous scan.)
 function seekTo(targetTs) {
-    if (!playback.db) {
+    if (!playback.count) {
         return
     }
     const clamped = Math.max(playback.t0, Math.min(playback.t1, targetTs))
@@ -948,7 +1246,9 @@ let activeAggregate = null
 
 async function aggregateStream(streamName, options = {}) {
     if (!playback.db || !playback.path) {
-        dimApp.send("aggregateError", { stream: streamName, message: "No recording open" })
+        // The Rust mapper reads and writes memory2 streams, so it needs the .db form.
+        const message = playback.mcap ? "Aggregation needs a .db recording, not an .mcap" : "No recording open"
+        dimApp.send("aggregateError", { stream: streamName, message })
         return
     }
     const aggregatedName = `${streamName}_aggregated`

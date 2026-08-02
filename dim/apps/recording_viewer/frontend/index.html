@@ -440,7 +440,7 @@
 <div class="overlay" id="overlay">
   <div class="drop" id="drop">
     <h1>Drop a recording here</h1>
-    <p>A dimos <code>.db</code> recording or a <code>.pc2.lcm</code> map — or use the button below to browse.</p>
+    <p>A dimos <code>.db</code> / <code>.mcap</code> recording or a <code>.pc2.lcm</code> map — or use the button below to browse.</p>
     <button class="btn primary" id="browse">Browse for a recording…</button>
     <div class="reclist" id="recent-opened-wrap" style="display:none">
       <h2>Recently opened</h2>
@@ -2248,7 +2248,7 @@ fbList.addEventListener("click", (event) => {
 fbPath.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") { return }
   const value = fbPath.value.trim(); if (!value) { return }
-  if (value.endsWith(".db") || value.endsWith(".pc2.lcm")) { fbClose(); open(value); return }
+  if (value.endsWith(".db") || value.endsWith(".mcap") || value.endsWith(".pc2.lcm")) { fbClose(); open(value); return }
   fbDir = value
   app.send("listDir", { dir: value })
 })
