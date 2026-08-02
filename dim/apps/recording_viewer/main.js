@@ -873,7 +873,14 @@ function selectCloudCursors(streamIndex, cursors, clamped) {
 // the new "<name>_aggregated" PointCloud2 stream back in place. This side just
 // launches it and forwards the JSON progress it prints.
 
-const MAPPER_DIR = new URL("./mapper", import.meta.url).pathname
+// Resolved through symlinks: an install dir may be symlinked at the package root
+// (dim installs/<pkg> -> a working clone), and nix refuses a `path:` flake whose
+// path traverses a symlink. Falls back to the raw path rather than throwing here,
+// since a throw at module load takes the whole backend down.
+let MAPPER_DIR = new URL("./mapper", import.meta.url).pathname
+try {
+    MAPPER_DIR = Deno.realPathSync(MAPPER_DIR)
+} catch { /* dir missing — let `nix run` report it */ }
 const AGG_VOXEL = 0.05                          // voxel edge (m), matches dimos --voxel
 
 // The single in-flight aggregation, so an "aggregateCancel" bus message can kill it.
