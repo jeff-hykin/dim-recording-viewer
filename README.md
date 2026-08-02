@@ -15,13 +15,17 @@ stack, but sourced from a file on disk instead of the bridge.
 Streams are discovered from the recording's `_streams` table and drawn by
 **duck-typing the decoded message** — there is no hardcoded topic list.
 
+A `.pc2.lcm` file (one bare LCM-encoded `PointCloud2` — an aggregated global map or
+relocalization premap) opens the same way. It has no timeline, so it loads as a
+single static cloud with the transport bar parked at zero.
+
 ## Install
 
 ```sh
 dim install https://github.com/jeff-hykin/dim-recording-viewer
 ```
 
-Open **Mapper** from the desktop rail, then drop a `.db` file or click
+Open **Mapper** from the desktop rail, then drop a `.db` / `.pc2.lcm` file or click
 **Browse**.
 
 ## How it works

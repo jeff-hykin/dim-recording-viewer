@@ -227,6 +227,14 @@ function frameForMessage(streamName, kind, message) {
 }
 
 // ── recording discovery ────────────────────────────────────────────────────
+// A ".pc2.lcm" is one bare LCM-encoded PointCloud2 on disk — an aggregated global
+// map / relocalization premap, with no timeline and no SQLite around it. It opens
+// like a recording that happens to hold a single static cloud.
+const STATIC_CLOUD_SUFFIX = ".pc2.lcm"
+function isRecordingFile(name) {
+    return name.endsWith(".db") || name.endsWith(STATIC_CLOUD_SUFFIX)
+}
+
 async function scanDir(root, depth, seen, found) {
     let entries
     try {
@@ -239,7 +247,7 @@ async function scanDir(root, depth, seen, found) {
             const path = `${root}/${entry.name}`
             if (entry.isDirectory && depth > 0) {
                 await scanDir(path, depth - 1, seen, found)
-            } else if (entry.isFile && entry.name.endsWith(".db") && !seen.has(path)) {
+            } else if (entry.isFile && isRecordingFile(entry.name) && !seen.has(path)) {
                 seen.add(path)
                 let size = 0
                 let mtime = 0
@@ -319,7 +327,7 @@ async function listDir(dir) {
         const child = `${path}/${entry.name}`
         if (entry.isDirectory) {
             dirs.push({ name: entry.name, path: child })
-        } else if (entry.isFile && entry.name.endsWith(".db")) {
+        } else if (entry.isFile && isRecordingFile(entry.name)) {
             let size = 0
             let mtime = 0
             try {
@@ -377,6 +385,7 @@ const playback = {
     timer: null,
     lastTick: 0,
     accumConfig: new Map(),          // stream-name -> "latest" | "all" | window-seconds string
+    staticCloud: null,               // .pc2.lcm only: the one decoded cloud frame, kept so a page reload can replay it
 }
 
 function closeRecording() {
@@ -403,6 +412,7 @@ function closeRecording() {
     playback.playhead = 0
     playback.playing = false
     playback.accumConfig = new Map()
+    playback.staticCloud = null
 }
 
 // Frames whose data is already in world coordinates (a tf root or a conventional
@@ -541,6 +551,52 @@ function buildTfReport(db, summary, active) {
     return { hasTf: tfNames.length > 0, treeLines, problems }
 }
 
+// One bare PointCloud2 file: the whole thing is a single message, so it loads as a
+// zero-length timeline with one cloud already emitted. `playback.db` stays null, which
+// makes seek/play no-ops — correct for a static map, and it also keeps the aggregation
+// handler (which needs a stream to walk) from accepting it.
+async function openStaticCloud(path) {
+    closeRecording()
+    let message
+    try {
+        message = decode(await Deno.readFile(path))
+    } catch (decodeError) {
+        dimApp.send("error", { message: `Failed to read ${path}: ${decodeError.message}` })
+        return
+    }
+    const cloud = parseCloud(message, AGG_RENDER_CAP)
+    if (!cloud) {
+        dimApp.send("error", { message: `${path} is not a PointCloud2 (no x/y/z fields)` })
+        return
+    }
+    const name = path.split("/").pop()
+    const stream = name.slice(0, -STATIC_CLOUD_SUFFIX.length)
+    const stamp = message.header?.stamp
+    const ts = stamp ? stamp.sec + (stamp.nsec || 0) / 1e9 : 0
+    playback.path = path
+    playback.streamNames = [stream]
+    playback.t0 = ts
+    playback.t1 = ts
+    playback.playhead = ts
+    playback.staticCloud = { stream, frame: frameId(message), n: cloud.n, b64: cloud.b64, ts }
+    dimApp.send("loaded", {
+        path,
+        name,
+        streams: [{ name: stream, type: "PointCloud2", kind: "cloud", rows: 1 }],
+        t0: ts,
+        t1: ts,
+        duration: 0,
+    })
+    replayStaticCloud()
+    sendTime()
+    await recordRecent(path)
+}
+
+function replayStaticCloud() {
+    dimApp.send("reset", {})
+    dimApp.send("cloud", playback.staticCloud)
+}
+
 async function openRecording(nameOrPath) {
     const path = await resolveRecording(nameOrPath)
     if (!path) {
@@ -548,6 +604,10 @@ async function openRecording(nameOrPath) {
         return
     }
     dimApp.send("loading", { path, name: path.split("/").pop() })
+    if (path.endsWith(STATIC_CLOUD_SUFFIX)) {
+        await openStaticCloud(path)
+        return
+    }
     closeRecording()
 
     let db
@@ -1002,7 +1062,12 @@ dimApp.onReceive(async (kind, payload) => {
             // scene. Rebuild the frame at the current playhead (clouds/image/tf/odom +
             // the timestamp) so the reloaded page shows exactly what was on screen —
             // no play/pause nudge needed.
-            seekTo(playback.playhead)
+            if (playback.staticCloud) {
+                replayStaticCloud()
+                sendTime()
+            } else {
+                seekTo(playback.playhead)
+            }
         }
     } else if (kind === "list") {
         dimApp.send("recordings", { recordings: await listRecordings(), recent: await recentRecordings() })
