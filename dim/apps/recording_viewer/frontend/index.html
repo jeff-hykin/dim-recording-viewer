@@ -40,10 +40,17 @@
   .pill.on { color: color-mix(in oklch, var(--info) 70%, var(--fg)); border-color: color-mix(in oklch, var(--info) 35%, var(--border)); }
   .pill.on .dot { background: var(--info); box-shadow: 0 0 0 3px color-mix(in oklch, var(--info) 22%, transparent); }
 
-  .panel { position: absolute; top: 60px; left: 12px; width: fit-content; min-width: 288px; max-width: min(560px, 46vw); z-index: 4;
+  /* left column: Streams panel at the top, tf tree pinned to the bottom. A flex column
+     (rather than two absolutely-placed boxes) keeps a long stream list from growing down
+     into the tf tree — the panel scrolls instead. */
+  #left-stack { position: absolute; top: 60px; left: 12px; bottom: 90px; z-index: 4;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+    pointer-events: none; }
+  #left-stack > * { pointer-events: auto; }
+  .panel { flex: 0 1 auto; min-height: 0; width: fit-content; min-width: 288px; max-width: min(560px, 46vw);
     background: color-mix(in oklch, var(--card) 90%, transparent); border: 1px solid var(--border);
     border-radius: var(--radius-lg); box-shadow: var(--shadow-md); backdrop-filter: blur(10px);
-    padding: 12px 12px 14px; font-size: 12px; max-height: calc(100% - 150px); overflow: auto; }
+    padding: 12px 12px 14px; font-size: 12px; overflow: auto; }
   .panel h2 { margin: 0 0 6px; font-size: 9.5px; letter-spacing: var(--track-label); text-transform: uppercase;
     color: var(--muted-fg); font-weight: 700; }
   .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -142,17 +149,14 @@
   #ctxmenu button { display: block; width: 100%; text-align: left; font: inherit; font-size: 12px;
     color: var(--fg); background: none; border: none; border-radius: var(--radius-sm); padding: 6px 10px; cursor: pointer; }
   #ctxmenu button:hover { background: color-mix(in oklch, var(--primary) 16%, transparent); }
-  /* bottom-right stack: marker readout above the tf tree */
-  #br-stack { position: absolute; bottom: 68px; right: 16px; z-index: 4;
-    display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-  #marker-coords { display: none;
+  #marker-coords { position: absolute; bottom: 68px; right: 16px; z-index: 4; display: none;
     font-family: var(--mono); font-size: 11px; color: var(--fg); letter-spacing: 0.04em; padding: 7px 11px;
     background: color-mix(in oklch, var(--card) 88%, transparent); border: 1px solid var(--border);
     border-radius: var(--radius); box-shadow: var(--shadow-md); backdrop-filter: blur(10px); }
   #marker-coords .mc-label { display: block; margin-bottom: 3px; color: var(--muted-fg); font-size: 9px;
     text-transform: uppercase; letter-spacing: var(--track-label); }
-  /* tf tree widget */
-  #tf-tree { display: none; width: 208px; overflow: hidden;
+  /* tf tree widget — sits at the bottom of the left column, under the Streams panel */
+  #tf-tree { margin-top: auto; flex: 0 0 auto; display: none; width: 208px; overflow: hidden;
     background: color-mix(in oklch, var(--card) 88%, transparent); border: 1px solid var(--border);
     border-radius: var(--radius); box-shadow: var(--shadow-md); backdrop-filter: blur(10px); }
   #tf-tree .tt-head { display: flex; align-items: center; gap: 6px; padding: 7px 10px; cursor: pointer;
@@ -274,7 +278,8 @@
   #fb-list .fb-row { display: flex; align-items: center; gap: 9px; padding: 7px 11px; cursor: pointer;
     font-family: var(--mono); font-size: 12px; color: var(--fg); border-bottom: 1px solid var(--border); }
   #fb-list .fb-row:last-child { border-bottom: none; }
-  #fb-list .fb-row:hover { background: var(--accent); }
+  #fb-list .fb-row:hover, #fb-list .fb-row.sel { background: var(--accent); }
+  #fb-card .fb-hint { font-size: 11px; color: var(--muted-fg); margin-top: 8px; font-family: var(--mono); }
   #fb-list .fb-icon { flex: none; width: 14px; text-align: center; opacity: 0.75; }
   #fb-list .fb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #fb-list .fb-size { flex: none; font-size: 11px; color: var(--muted-fg); }
@@ -333,12 +338,18 @@
   <span class="pill" id="pill"><span class="dot" id="dot"></span><span id="stat">idle</span></span>
 </div>
 
-<div class="panel" id="panel" style="display:none">
-  <div class="panel-head">
-    <h2 class="toggle" id="streams-toggle" title="Click to collapse/expand">Streams</h2>
-    <button class="mini-btn" id="toggle-all" title="Show or hide all streams at once">Hide all</button>
+<div id="left-stack">
+  <div class="panel" id="panel" style="display:none">
+    <div class="panel-head">
+      <h2 class="toggle" id="streams-toggle" title="Click to collapse/expand">Streams</h2>
+      <button class="mini-btn" id="toggle-all" title="Show or hide all streams at once">Hide all</button>
+    </div>
+    <div id="stream-list"><div class="empty">none yet</div></div>
   </div>
-  <div id="stream-list"><div class="empty">none yet</div></div>
+  <div id="tf-tree" class="collapsed">
+    <div class="tt-head" id="tf-tree-head">TF tree<span class="tt-count" id="tf-tree-count"></span></div>
+    <div id="tf-tree-list"></div>
+  </div>
 </div>
 
 <div id="cam-layer"></div>
@@ -360,13 +371,7 @@
   <button id="ctx-place">Place marker here</button>
   <button id="ctx-clear">Clear markers</button>
 </div>
-<div id="br-stack">
-  <div id="marker-coords"><span class="mc-label">Marker · floor (m)</span><span id="marker-coords-val"></span></div>
-  <div id="tf-tree" class="collapsed">
-    <div class="tt-head" id="tf-tree-head">TF tree<span class="tt-count" id="tf-tree-count"></span></div>
-    <div id="tf-tree-list"></div>
-  </div>
-</div>
+<div id="marker-coords"><span class="mc-label">Marker · floor (m)</span><span id="marker-coords-val"></span></div>
 <div id="cust-panel">
   <span class="cp-title" id="cp-title"></span>
   <div class="cp-row"><span>Start</span><input type="range" min="0" max="359" id="cp-start" class="cp-hue"></div>
@@ -418,6 +423,7 @@
     <div class="fb-title">Open a recording</div>
     <input id="fb-path" spellcheck="false" autocomplete="off" />
     <div id="fb-list"></div>
+    <div class="fb-hint">tab completes · ↑↓ picks · enter opens</div>
     <div class="fb-actions"><button id="fb-cancel">Cancel</button></div>
   </div>
 </div>
@@ -455,7 +461,7 @@
 
 <script type="module">
 import * as THREE from "three"
-import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.0/frontend.js"
+import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.1/frontend.js"
 
 // ── cloud coloring: a start→end color gradient mapped along one axis ──
 const clamp01 = (value) => Math.min(1, Math.max(0, value))
@@ -831,24 +837,30 @@ const tfWarnBody = document.getElementById("tf-warn-body")
 const tfWarnTree = document.getElementById("tf-warn-tree")
 function onTfReport(payload) {
   const problems = (payload && payload.problems) || []
-  if (!problems.length) { return }   // everything places fine → no warning
+  const codecProblems = (payload && payload.codecProblems) || []
+  if (!problems.length && !codecProblems.length) { return }   // everything places fine → no warning
   tfWarnBody.replaceChildren()
-  const intro = document.createElement("p")
-  intro.textContent = "The 3D view places each sensor stream by following a chain of transforms (tf) from the sensor up to the map. These streams don't have a clear chain, so they may be missing or land in the wrong spot:"
-  tfWarnBody.appendChild(intro)
-  const list = document.createElement("ul")
-  list.className = "tw-list"
-  for (const problem of problems) {
-    const item = document.createElement("li")
-    const streamName = document.createElement("b")
-    streamName.textContent = problem.stream
-    const why = document.createElement("em")
-    why.textContent = problem.detail
-    item.appendChild(streamName)
-    item.appendChild(why)
-    list.appendChild(item)
+  const section = (text, entries) => {
+    if (!entries.length) { return }
+    const intro = document.createElement("p")
+    intro.textContent = text
+    tfWarnBody.appendChild(intro)
+    const list = document.createElement("ul")
+    list.className = "tw-list"
+    for (const problem of entries) {
+      const item = document.createElement("li")
+      const streamName = document.createElement("b")
+      streamName.textContent = problem.stream
+      const why = document.createElement("em")
+      why.textContent = problem.detail
+      item.appendChild(streamName)
+      item.appendChild(why)
+      list.appendChild(item)
+    }
+    tfWarnBody.appendChild(list)
   }
-  tfWarnBody.appendChild(list)
+  section("The 3D view places each sensor stream by following a chain of transforms (tf) from the sensor up to the map. These streams don't have a clear chain, so they may be missing or land in the wrong spot:", problems)
+  section("These streams are in the recording but were left out, because their messages are stored in a format this viewer has no decoder for:", codecProblems)
   tfWarnTree.replaceChildren()
   const treeLines = (payload && payload.treeLines) || []
   if (!treeLines.length) {
@@ -979,6 +991,30 @@ function makeAxes(length, radius) {
   }
   axesGroup.position.z = 0.002
   return axesGroup
+}
+
+// Box outline as 12 cylinders rather than LineSegments: WebGL clamps line width to 1px
+// on every desktop driver, so a real wireframe can't be made any thicker. EdgesGeometry
+// supplies the 12 box edges (a wireframe material would also draw each face's diagonal).
+function makeBoxWireframe(width, depth, height, color, radius) {
+  const group = new THREE.Group()
+  const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(width, depth, height))
+  const corners = edges.getAttribute("position")
+  const material = new THREE.MeshBasicMaterial({ color })
+  const start = new THREE.Vector3()
+  const end = new THREE.Vector3()
+  for (let i = 0; i < corners.count; i += 2) {
+    start.fromBufferAttribute(corners, i)
+    end.fromBufferAttribute(corners, i + 1)
+    const rod = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius, radius, start.distanceTo(end), 8),
+      material)
+    rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize())
+    rod.position.copy(start).add(end).multiplyScalar(0.5)
+    group.add(rod)
+  }
+  edges.dispose()
+  return group
 }
 scene.add(makeAxes(1.5, 0.02))
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => setTimeout(applyTheme, 0))
@@ -1290,11 +1326,8 @@ tfTreeListEl.addEventListener("mouseleave", () => {
   if (tfHovered) { tfHovered = null; syncTfAxes() }
 })
 
-function b64ToBuffer(b64) {
-  const binary = atob(b64); const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i) }
-  return bytes.buffer
-}
+// Byte payloads arrive as binary bus frames: payload.bytes is a fresh
+// offset-0 Uint8Array (SDK v0.3.1), so its .buffer is safe to view directly.
 
 // ── point clouds ──
 const clouds = new Map()   // stream -> { points, geom, frame }
@@ -1606,7 +1639,7 @@ function onCloud(payload) {
   // Otherwise the very first scan renders as raw points and only flips to voxels once
   // the customize panel forces a refresh.
   addStream(payload.stream, "cloud")
-  const rawXyz = new Float32Array(b64ToBuffer(payload.b64))
+  const rawXyz = new Float32Array(payload.bytes.buffer)
   const points = new THREE.Points(new THREE.BufferGeometry(), cloud.material)
   points.matrixAutoUpdate = false
   // Placement, in priority order:
@@ -1644,11 +1677,7 @@ function ensureOdom(stream) {
   if (odom) { return odom }
   const color = TRAIL_COLORS[odoms.size % TRAIL_COLORS.length]
   const group = new THREE.Group(); group.matrixAutoUpdate = false
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.28, 0.22),
-    // Emissive base + high roughness keeps shadowed faces from crushing to black, so
-    // the box reads as its color from every angle instead of a harsh lit/unlit split.
-    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.5, metalness: 0.05, roughness: 0.85 }))
+  const body = makeBoxWireframe(0.5, 0.28, 0.22, color, 0.012)
   body.position.z = 0.11
   group.add(body); group.add(makeAxes(0.6, 0.012))
   const geom = new THREE.BufferGeometry()
@@ -1757,7 +1786,7 @@ function ensurePath(stream) {
 }
 function onPath(payload) {
   const path = ensurePath(payload.stream)
-  const xyz = new Float32Array(b64ToBuffer(payload.b64))
+  const xyz = new Float32Array(payload.bytes.buffer)
   const capacity = path.geom.getAttribute("position")
   if (xyz.length > capacity.array.length) {
     path.geom.setAttribute("position", new THREE.BufferAttribute(xyz.slice(), 3))
@@ -1790,8 +1819,30 @@ function jetColor(t) {
     Math.round(clamp01(Math.min(value + 0.5, -value + 2.5)) * 255),
   ]
 }
+// Depth histograms are long-tailed: one doorway at the far end sets the maximum and squashes the
+// whole room into the blue end of the ramp. Trim to the 5th/95th percentile so the colors spread
+// over the depths actually in frame; the clipped tails just saturate at the ends of the ramp.
+function percentileRange(histogram, low, high, total) {
+  const step = (high - low) / histogram.length
+  const cut = total * 0.05
+  let seen = 0, first = 0, last = histogram.length - 1
+  for (let bin = 0; bin < histogram.length; bin++) {
+    seen += histogram[bin]
+    if (seen >= cut) { first = bin; break }
+  }
+  seen = 0
+  for (let bin = histogram.length - 1; bin >= 0; bin--) {
+    seen += histogram[bin]
+    if (seen >= cut) { last = bin; break }
+  }
+  if (last <= first) { return [low, high] }
+  return [low + first * step, low + (last + 1) * step]
+}
 function saveWindowGeom(name, win) {
   const entry = known.get(name); if (!entry) { return }
+  // A hidden window measures 0×0, and the ResizeObserver fires when it is hidden — saving
+  // then would persist a zero size and the window would come back permanently invisible.
+  if (!win.el.offsetWidth || !win.el.offsetHeight) { return }
   entry.winX = win.el.offsetLeft; entry.winY = win.el.offsetTop
   entry.winW = win.el.offsetWidth; entry.winH = win.el.offsetHeight
   saveStreamStyle(name, entry)
@@ -1818,9 +1869,18 @@ function ensureImageWindow(name) {
     '<button class="cam-close" title="Hide">&times;</button></div><div class="cam-body"><canvas></canvas></div>'
   el.querySelector(".cam-title").textContent = name.split("#")[0]
   const canvas = el.querySelector("canvas")
-  if (Number.isFinite(entry?.winW)) { el.style.width = entry.winW + "px"; el.style.height = entry.winH + "px" }
-  if (Number.isFinite(entry?.winX)) { el.style.left = entry.winX + "px"; el.style.top = entry.winY + "px" }
-  else {
+  // Restored geometry is clamped to the current viewport, and a non-positive saved size is
+  // discarded — a window saved while hidden or from a larger viewport would otherwise come
+  // back off-screen or zero-sized, i.e. a stream that is listed and enabled but never seen.
+  const layerWidth = camLayer.clientWidth, layerHeight = camLayer.clientHeight
+  if (entry?.winW > 0 && entry?.winH > 0) {
+    el.style.width = Math.min(entry.winW, layerWidth) + "px"
+    el.style.height = Math.min(entry.winH, layerHeight) + "px"
+  }
+  if (Number.isFinite(entry?.winX)) {
+    el.style.left = Math.max(0, Math.min(entry.winX, layerWidth - 40)) + "px"
+    el.style.top = Math.max(0, Math.min(entry.winY, layerHeight - 24)) + "px"
+  } else {
     const offset = 18 * (camCascade++ % 6)
     el.style.right = (14 + offset) + "px"; el.style.top = (60 + offset) + "px"
   }
@@ -1865,6 +1925,7 @@ function ensureImageWindow(name) {
 function drawCompressedDepth(win, payload) {
   const image = new Image()
   image.onload = () => {
+    URL.revokeObjectURL(image.src)
     const width = image.width, height = image.height
     if (!win.decodeCanvas) { win.decodeCanvas = document.createElement("canvas") }
     const decodeCanvas = win.decodeCanvas
@@ -1873,11 +1934,13 @@ function drawCompressedDepth(win, payload) {
     decodeCtx.drawImage(image, 0, 0)
     const source = decodeCtx.getImageData(0, 0, width, height).data
     // brightness range across valid (non-zero) pixels, for normalization
-    let low = Infinity, high = -Infinity
+    const histogram = new Uint32Array(256)
+    let valid = 0
     for (let i = 0; i < source.length; i += 4) {
       const gray = source[i]
-      if (gray > 0) { if (gray < low) { low = gray }; if (gray > high) { high = gray } }
+      if (gray > 0) { histogram[gray]++; valid++ }
     }
+    const [low, high] = percentileRange(histogram, 0, 256, valid)
     const span = high > low ? high - low : 1
     if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
     if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
@@ -1885,26 +1948,27 @@ function drawCompressedDepth(win, payload) {
     for (let i = 0; i < source.length; i += 4) {
       const gray = source[i]
       if (!(gray > 0)) { destination[i] = 0; destination[i + 1] = 0; destination[i + 2] = 0; destination[i + 3] = 255; continue }
-      // brighter grayscale = nearer surface, so invert to keep near = hot (red)
-      const [r, g, b] = jetColor(1 - (gray - low) / span)
+      // brighter grayscale = nearer surface, and near reads as cool (blue), far as hot (red)
+      const [r, g, b] = jetColor((gray - low) / span)
       destination[i] = r; destination[i + 1] = g; destination[i + 2] = b; destination[i + 3] = 255
     }
     win.ctx.putImageData(win.raw, 0, 0)
   }
-  image.src = `data:image/${(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"};base64,${payload.b64}`
+  image.src = URL.createObjectURL(new Blob([payload.bytes], { type: `image/${(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"}` }))
 }
 function drawColorImage(win, payload) {
   if (payload.kind === "compressed") {
     const image = new Image()
     image.onload = () => {
+      URL.revokeObjectURL(image.src)
       if (win.canvas.width !== image.width || win.canvas.height !== image.height) { win.canvas.width = image.width; win.canvas.height = image.height; win.raw = null }
       win.ctx.drawImage(image, 0, 0)
     }
-    image.src = `data:image/${(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"};base64,${payload.b64}`
+    image.src = URL.createObjectURL(new Blob([payload.bytes], { type: `image/${(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"}` }))
     return
   }
   const width = payload.width, height = payload.height; if (!width || !height) { return }
-  const source = new Uint8Array(b64ToBuffer(payload.b64))
+  const source = payload.bytes
   const encoding = (payload.encoding || "rgb8").toLowerCase()
   const channels = encoding === "rgba8" || encoding === "bgra8" ? 4 : encoding === "mono8" ? 1 : 3
   const step = payload.step || width * channels
@@ -1927,7 +1991,7 @@ function drawColorImage(win, payload) {
 }
 function drawDepthImage(win, payload) {
   const width = payload.width, height = payload.height; if (!width || !height) { return }
-  const buffer = b64ToBuffer(payload.b64)
+  const buffer = payload.bytes.buffer
   const isFloat = String(payload.encoding || "").toLowerCase() === "32fc1"
   const littleEndian = !payload.bigendian
   const view = new DataView(buffer)
@@ -1935,14 +1999,28 @@ function drawDepthImage(win, payload) {
   const step = payload.step || width * bytesPerPixel
   const readAt = (offset) => isFloat ? view.getFloat32(offset, littleEndian) : view.getUint16(offset, littleEndian)
   // find the valid depth range (ignore zero / NaN = no return) for normalization
-  let low = Infinity, high = -Infinity
+  let minimum = Infinity, maximum = -Infinity
   for (let y = 0; y < height; y++) {
     let offset = y * step
     for (let x = 0; x < width; x++, offset += bytesPerPixel) {
       const value = readAt(offset)
-      if (value > 0 && Number.isFinite(value)) { if (value < low) { low = value }; if (value > high) { high = value } }
+      if (value > 0 && Number.isFinite(value)) { if (value < minimum) { minimum = value }; if (value > maximum) { maximum = value } }
     }
   }
+  const histogram = new Uint32Array(512)
+  const binScale = maximum > minimum ? histogram.length / (maximum - minimum) : 0
+  let valid = 0
+  for (let y = 0; y < height; y++) {
+    let offset = y * step
+    for (let x = 0; x < width; x++, offset += bytesPerPixel) {
+      const value = readAt(offset)
+      if (value > 0 && Number.isFinite(value)) {
+        histogram[Math.min(histogram.length - 1, ((value - minimum) * binScale) | 0)]++
+        valid++
+      }
+    }
+  }
+  const [low, high] = percentileRange(histogram, minimum, maximum, valid)
   const span = high > low ? high - low : 1
   if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
   if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
@@ -1952,7 +2030,7 @@ function drawDepthImage(win, payload) {
     for (let x = 0; x < width; x++, offset += bytesPerPixel, destIndex += 4) {
       const value = readAt(offset)
       if (!(value > 0) || !Number.isFinite(value)) { destination[destIndex] = 0; destination[destIndex + 1] = 0; destination[destIndex + 2] = 0; destination[destIndex + 3] = 255; continue }
-      const [r, g, b] = jetColor((value - low) / span)
+      const [r, g, b] = jetColor(1 - (value - low) / span)   // near = blue, far = red
       destination[destIndex] = r; destination[destIndex + 1] = g; destination[destIndex + 2] = b; destination[destIndex + 3] = 255
     }
   }
@@ -2209,48 +2287,168 @@ const fbBackdrop = document.getElementById("fb-backdrop")
 const fbPath = document.getElementById("fb-path")
 const fbList = document.getElementById("fb-list")
 let fbDir = null
+let fbListing = null
+let fbRequested = null   // the dir string we last asked for, as typed — the backend answers with
+                         // it resolved ("~/x" comes back "/Users/me/x"), so comparing the typed
+                         // text against the reply would re-request forever
+let fbShown = []
+let fbSelected = -1
+let fbTyping = false     // while true the reply must not overwrite what is being typed
+let fbTyped = ""
+let fbGrowing = false    // last edit added characters — only then is it safe to autocomplete
+function fbRequest(dir) {
+  fbRequested = dir
+  app.send("listDir", { dir })
+}
 function fbOpen() {
   fbBackdrop.style.display = "flex"
   fbList.innerHTML = '<div class="fb-empty">loading…</div>'
-  app.send("listDir", { dir: fbDir || "~" })
+  fbTyping = false
+  fbSelected = -1
+  fbRequest(fbDir || "~")
+  fbPath.focus()
 }
 function fbClose() {
   fbBackdrop.style.display = "none"
 }
+// Everything past the last "/" is the fragment still being typed; everything before it names
+// the directory to list. No slash at all means "filter what is already on screen".
+function fbSplit(value) {
+  const cut = value.lastIndexOf("/")
+  if (cut < 0) { return { dir: null, fragment: value } }
+  return { dir: value.slice(0, cut) || "/", fragment: value.slice(cut + 1) }
+}
+function fbMatches() {
+  if (!fbListing) { return [] }
+  const entries = [
+    ...fbListing.dirs.map((entry) => ({ ...entry, isDir: true })),
+    ...fbListing.files.map((entry) => ({ ...entry, isDir: false })),
+  ]
+  const fragment = fbSplit(fbPath.value).fragment.toLowerCase()
+  if (!fragment) { return entries }
+  const starts = (entry) => entry.name.toLowerCase().startsWith(fragment)
+  return [
+    ...entries.filter(starts),
+    ...entries.filter((entry) => !starts(entry) && entry.name.toLowerCase().includes(fragment)),
+  ]
+}
+function fbRenderList() {
+  if (fbListing?.error) {
+    fbShown = []
+    fbList.innerHTML = `<div class="fb-empty">${fbListing.error.replace(/[&<>]/g, "")}</div>`
+    return
+  }
+  fbShown = fbMatches()
+  if (fbListing?.parent && !fbSplit(fbPath.value).fragment) {
+    fbShown = [{ name: "..", path: fbListing.parent, isDir: true, isParent: true }, ...fbShown]
+  }
+  if (fbSelected >= fbShown.length) { fbSelected = fbShown.length - 1 }
+  const rows = fbShown.map((entry, index) => {
+    const icon = entry.isParent ? "↰" : (entry.isDir ? "▸" : "▪")
+    const size = entry.isDir ? "" : `<span class="fb-size">${fmtSize(entry.size)}</span>`
+    return `<div class="fb-row${index === fbSelected ? " sel" : ""}" data-index="${index}"><span class="fb-icon">${icon}</span><span class="fb-name">${entry.name.replace(/[&<>]/g, "")}</span>${size}</div>`
+  })
+  fbList.innerHTML = rows.length ? rows.join("") : '<div class="fb-empty">no matches</div>'
+  fbList.querySelector(".fb-row.sel")?.scrollIntoView({ block: "nearest" })
+}
 function fbRender(listing) {
   if (fbBackdrop.style.display === "none") { return }
+  fbListing = listing
   fbDir = listing.dir
-  fbPath.value = listing.dir
-  if (listing.error) { fbList.innerHTML = `<div class="fb-empty">${listing.error.replace(/[&<>]/g, "")}</div>`; return }
-  const rows = []
-  if (listing.parent) {
-    rows.push(`<div class="fb-row" data-dir="${encodeURIComponent(listing.parent)}"><span class="fb-icon">↰</span><span class="fb-name">..</span></div>`)
+  fbSelected = -1
+  if (!fbTyping) {
+    // The trailing slash matters: without it the last path segment reads as a half-typed
+    // fragment and filters the listing down to nothing.
+    fbPath.value = listing.dir.endsWith("/") ? listing.dir : listing.dir + "/"
+    fbTyped = fbPath.value
+    fbRequested = listing.dir
   }
-  for (const entry of listing.dirs) {
-    rows.push(`<div class="fb-row" data-dir="${encodeURIComponent(entry.path)}"><span class="fb-icon">▸</span><span class="fb-name">${entry.name.replace(/[&<>]/g, "")}</span></div>`)
+  fbRenderList()
+  // The fragment typed while this listing was in flight has had no chance to complete yet.
+  if (fbTyping && fbGrowing) { fbSuggestInline() }
+}
+function fbChoose(entry) {
+  if (!entry) { return }
+  if (entry.isDir) {
+    fbTyping = false
+    fbSelected = -1
+    fbList.innerHTML = '<div class="fb-empty">loading…</div>'
+    fbRequest(entry.path)
+  } else {
+    fbClose()
+    open(entry.path)
   }
-  for (const entry of listing.files) {
-    rows.push(`<div class="fb-row" data-file="${encodeURIComponent(entry.path)}"><span class="fb-icon">▪</span><span class="fb-name">${entry.name.replace(/[&<>]/g, "")}</span><span class="fb-size">${fmtSize(entry.size)}</span></div>`)
+}
+// Inline autocomplete: append the longest prefix every match shares and leave it selected, so
+// the next keystroke types straight over it. Forward typing only — completing during a backspace
+// re-fills the field faster than it can be erased.
+function fbSuggestInline() {
+  const fragment = fbSplit(fbPath.value).fragment
+  if (!fragment) { return }
+  const names = fbMatches()
+    .filter((entry) => entry.name.toLowerCase().startsWith(fragment.toLowerCase()))
+    .map((entry) => entry.name)
+  if (!names.length) { return }
+  let shared = names[0]
+  for (const name of names) {
+    let index = 0
+    while (index < shared.length && shared[index].toLowerCase() === name[index]?.toLowerCase()) { index++ }
+    shared = shared.slice(0, index)
   }
-  fbList.innerHTML = rows.length ? rows.join("") : '<div class="fb-empty">no folders or recordings here</div>'
+  if (shared.length <= fragment.length) { return }
+  const base = fbPath.value.slice(0, fbPath.value.length - fragment.length)
+  fbPath.value = base + shared
+  fbPath.setSelectionRange(base.length + fragment.length, fbPath.value.length)
 }
 fbList.addEventListener("click", (event) => {
   const row = event.target.closest(".fb-row"); if (!row) { return }
-  if (row.dataset.dir) {
-    fbDir = decodeURIComponent(row.dataset.dir)
+  fbChoose(fbShown[Number(row.dataset.index)])
+})
+fbPath.addEventListener("input", () => {
+  fbTyping = true
+  const value = fbPath.value
+  fbGrowing = value.length > fbTyped.length && value.startsWith(fbTyped)
+  fbTyped = value
+  const { dir } = fbSplit(value)
+  if (dir !== null && dir !== fbRequested) {
+    // Drop the old listing rather than filtering the new fragment against it — otherwise the
+    // first characters typed after a "/" complete to names from the *previous* directory.
+    fbListing = null
     fbList.innerHTML = '<div class="fb-empty">loading…</div>'
-    app.send("listDir", { dir: fbDir })
-  } else if (row.dataset.file) {
-    fbClose()
-    open(decodeURIComponent(row.dataset.file))
+    fbRequest(dir)
+    return
   }
+  fbSelected = -1
+  fbRenderList()
+  if (fbGrowing) { fbSuggestInline() }
 })
 fbPath.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault()
+    if (!fbShown.length) { return }
+    fbSelected = Math.max(0, Math.min(fbShown.length - 1, fbSelected + (event.key === "ArrowDown" ? 1 : -1)))
+    fbRenderList()
+    return
+  }
+  if (event.key === "Tab") {
+    event.preventDefault()
+    const entry = fbShown[fbSelected >= 0 ? fbSelected : 0]
+    if (!entry || entry.isParent) { return }
+    fbTyping = true
+    fbPath.value = entry.isDir ? entry.path + "/" : entry.path
+    fbTyped = fbPath.value
+    if (entry.isDir) { fbRequest(entry.path) } else { fbSelected = -1; fbRenderList() }
+    return
+  }
   if (event.key !== "Enter") { return }
+  event.preventDefault()
+  if (fbSelected >= 0) { fbChoose(fbShown[fbSelected]); return }
   const value = fbPath.value.trim(); if (!value) { return }
   if (value.endsWith(".db") || value.endsWith(".mcap") || value.endsWith(".pc2.lcm")) { fbClose(); open(value); return }
-  fbDir = value
-  app.send("listDir", { dir: value })
+  const candidates = fbShown.filter((entry) => !entry.isParent)
+  if (fbSplit(value).fragment && candidates.length === 1) { fbChoose(candidates[0]); return }
+  fbTyping = false
+  fbRequest(value)
 })
 document.getElementById("fb-cancel").addEventListener("click", fbClose)
 fbBackdrop.addEventListener("click", (event) => { if (event.target === fbBackdrop) { fbClose() } })

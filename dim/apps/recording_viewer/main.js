@@ -11,9 +11,10 @@
 // off disk exactly when the playhead reaches it — blobs never all sit in memory
 // and never cross the app bus.
 
-import { DimAppBackend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.0/backend.js"
+import { DimAppBackend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.1/backend.js"
 import { DatabaseSync } from "node:sqlite"
 import { decode } from "jsr:@dimos/msgs@0.1.4"
+import lz4 from "https://esm.sh/lz4js@0.2.0"
 
 const dimApp = new DimAppBackend()
 
@@ -35,14 +36,6 @@ const KIND_NAMES = ["cloud", "odom", "tf", "path", "image"]
 const KIND_CODES = { cloud: 0, odom: 1, tf: 2, path: 3, image: 4 }
 
 // ── low-level helpers (shared shape with dim-live-viewer) ──────────────────
-function toB64(bytes) {
-    let binary = ""
-    const CHUNK = 0x8000
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK))
-    }
-    return btoa(binary)
-}
 function asBytes(data) {
     if (data instanceof Uint8Array) {
         return data
@@ -54,6 +47,23 @@ function asBytes(data) {
         return Uint8Array.from(data)
     }
     return new Uint8Array(0)
+}
+// _streams.config.codec_id names the codec chain outermost-first: "lcm", "jpeg", "lz4+lcm",
+// "pickle". Wrappers ("lz4") compress whatever the inner codec produced; the base codec decides
+// whether @dimos/msgs can read it at all — "lcm" and "jpeg" both land on `decode()` (a jpeg blob
+// is still an LCM Image envelope, just with JPEG pixel bytes), while "pickle" is python-only.
+const DECODABLE_BASE_CODECS = new Set(["lcm", "jpeg"])
+function baseCodec(codecId) {
+    return String(codecId || "lcm").split("+").pop()
+}
+// Blobs whose stream config isn't at hand (mcap, a bare .pc2.lcm file) still get their wrapper
+// stripped: an LCM or JPEG payload never begins with the LZ4 frame magic.
+function decodeBlob(data) {
+    let bytes = asBytes(data)
+    if (bytes[0] === 0x04 && bytes[1] === 0x22 && bytes[2] === 0x4D && bytes[3] === 0x18) {
+        bytes = new Uint8Array(lz4.decompress(bytes))
+    }
+    return decode(bytes)
 }
 function frameId(message) {
     return message?.header?.frame_id || ""
@@ -147,7 +157,7 @@ function parseCloud(message, maxPts = MAX_PTS) {
         out[kept * 3 + 2] = z
         kept++
     }
-    return { n: kept, b64: toB64(new Uint8Array(out.buffer, 0, kept * 3 * 4)) }
+    return { n: kept, bytes: new Uint8Array(out.buffer.slice(0, kept * 3 * 4)) }
 }
 function parsePath(message) {
     const poses = message.poses || []
@@ -163,7 +173,18 @@ function parsePath(message) {
         out[kept * 3 + 2] = position.z
         kept++
     }
-    return { n: kept, b64: toB64(new Uint8Array(out.buffer, 0, kept * 3 * 4)) }
+    return { n: kept, bytes: new Uint8Array(out.buffer.slice(0, kept * 3 * 4)) }
+}
+
+// Byte payloads ride binary bus frames (SDK v0.3.1 sendBytes) instead of base64;
+// everything else stays a plain JSON message.
+function sendFrame(kind, payload) {
+    if (payload.bytes) {
+        const { bytes, ...meta } = payload
+        dimApp.sendBytes(kind, bytes, meta)
+    } else {
+        dimApp.send(kind, payload)
+    }
 }
 
 // Turn one decoded message into the frontend frame for its kind.
@@ -171,7 +192,7 @@ function frameForMessage(streamName, kind, message) {
     if (kind === "cloud") {
         const cloud = parseCloud(message, streamName.split("#")[0].endsWith("_aggregated") ? AGG_RENDER_CAP : MAX_PTS)
         if (cloud) {
-            return ["cloud", { stream: streamName, frame: frameId(message), n: cloud.n, b64: cloud.b64 }]
+            return ["cloud", { stream: streamName, frame: frameId(message), n: cloud.n, bytes: cloud.bytes }]
         }
     } else if (kind === "odom") {
         const pose = poseOf(message)
@@ -197,7 +218,7 @@ function frameForMessage(streamName, kind, message) {
         }
     } else if (kind === "path") {
         const path = parsePath(message)
-        return ["path", { stream: streamName, frame: frameId(message), n: path.n, b64: path.b64 }]
+        return ["path", { stream: streamName, frame: frameId(message), n: path.n, bytes: path.bytes }]
     } else if (kind === "image") {
         // A CompressedImage carries `format` and no width/height. But some recordings
         // also store plain Image messages whose blob is already JPEG/PNG-encoded
@@ -210,7 +231,7 @@ function frameForMessage(streamName, kind, message) {
         const isEncodedBlob = encoding === "jpeg" || encoding === "jpg" || encoding === "png"
         if (isCompressedImage || isEncodedBlob) {
             const format = isCompressedImage ? String(message.format || "jpeg") : (encoding === "jpg" ? "jpeg" : encoding)
-            return ["frame", { stream: streamName, kind: "compressed", format, b64: toB64(asBytes(message.data)) }]
+            return ["frame", { stream: streamName, kind: "compressed", format, bytes: asBytes(message.data) }]
         }
         return ["frame", {
             stream: streamName,
@@ -220,7 +241,7 @@ function frameForMessage(streamName, kind, message) {
             height: message.height | 0,
             step: message.step | 0,
             bigendian: !!message.is_bigendian,
-            b64: toB64(asBytes(message.data)),
+            bytes: asBytes(message.data),
         }]
     }
     return null
@@ -449,7 +470,7 @@ function sqliteTfSource(db) {
                 const row = blobStatement.get(ids[i])
                 if (!row || !row.data) { continue }
                 try {
-                    yield decode(asBytes(row.data))
+                    yield decodeBlob(row.data)
                 } catch { /* undecodable message → skip */ }
             }
         },
@@ -457,7 +478,7 @@ function sqliteTfSource(db) {
             try {
                 const row = db.prepare(`SELECT data FROM "${streamName}_blob" LIMIT 1`).get()
                 if (row && row.data) {
-                    return frameId(decode(asBytes(row.data)))
+                    return frameId(decodeBlob(row.data))
                 }
             } catch { /* undecodable / no blob → unknown frame */ }
             return ""
@@ -574,7 +595,7 @@ async function openStaticCloud(path) {
     closeRecording()
     let message
     try {
-        message = decode(await Deno.readFile(path))
+        message = decodeBlob(await Deno.readFile(path))
     } catch (decodeError) {
         dimApp.send("error", { message: `Failed to read ${path}: ${decodeError.message}` })
         return
@@ -593,7 +614,7 @@ async function openStaticCloud(path) {
     playback.t0 = ts
     playback.t1 = ts
     playback.playhead = ts
-    playback.staticCloud = { stream, frame: frameId(message), n: cloud.n, b64: cloud.b64, ts }
+    playback.staticCloud = { stream, frame: frameId(message), n: cloud.n, bytes: cloud.bytes, ts }
     dimApp.send("loaded", {
         path,
         name,
@@ -609,7 +630,7 @@ async function openStaticCloud(path) {
 
 function replayStaticCloud() {
     dimApp.send("reset", {})
-    dimApp.send("cloud", playback.staticCloud)
+    sendFrame("cloud", playback.staticCloud)
 }
 
 // ── .mcap recordings ───────────────────────────────────────────────────────
@@ -879,7 +900,7 @@ async function openMcap(path) {
         t1: playback.t1,
         duration: playback.t1 - playback.t0,
     })
-    seekTo(playback.t0)
+    seekTo(openingPlayhead())
     try {
         dimApp.send("tfReport", buildTfReport(mcapTfSource(), summary, active))
     } catch (reportError) {
@@ -924,6 +945,7 @@ async function openRecording(nameOrPath) {
     // Pass 1: stream metadata + row counts (so we can size the typed arrays).
     const summary = []
     const active = []   // { name, kind, kindCode, count }
+    const codecProblems = []
     let total = 0
     for (const row of streamRows) {
         let config
@@ -934,12 +956,17 @@ async function openRecording(nameOrPath) {
         }
         const typeName = config.payload_module?.split(".").pop() ?? "unknown"
         const kind = kindOfType(typeName)
+        const codec = config.codec_id || "lcm"
         const count = db.prepare(`SELECT COUNT(*) AS c FROM "${row.name}"`).get().c
-        summary.push({ name: row.name, type: typeName, kind, rows: count })
+        summary.push({ name: row.name, type: typeName, kind, rows: count, codec })
         const hasBlob = db.prepare(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
         ).get(`${row.name}_blob`) != null
-        if (kind && count && hasBlob) {
+        if (kind && count && hasBlob && !DECODABLE_BASE_CODECS.has(baseCodec(codec))) {
+            // Say so rather than leaving the stream out of the panel with no explanation —
+            // a silently missing stream reads as a bug in the viewer.
+            codecProblems.push({ stream: row.name, detail: ` — stored with the "${codec}" codec, which this viewer can't read` })
+        } else if (kind && count && hasBlob) {
             active.push({ name: row.name, kind, kindCode: KIND_CODES[kind], count })
             total += count
         }
@@ -999,10 +1026,10 @@ async function openRecording(nameOrPath) {
         t1: playback.t1,
         duration: playback.t1 - playback.t0,
     })
-    seekTo(playback.t0)   // render the opening frame but stay paused until the user hits play
+    seekTo(openingPlayhead())   // render the opening frame but stay paused until the user hits play
     // Warn (ELI5 + tf tree) if any renderable stream's frame can't be placed.
     try {
-        dimApp.send("tfReport", buildTfReport(sqliteTfSource(db), summary, active))
+        dimApp.send("tfReport", { ...buildTfReport(sqliteTfSource(db), summary, active), codecProblems })
     } catch (reportError) {
         console.error("tf report failed:", reportError.message)
     }
@@ -1024,7 +1051,7 @@ function decodeAt(sortedCursor) {
         return null
     }
     try {
-        return decode(asBytes(row.data))
+        return decodeBlob(row.data)
     } catch {
         return null
     }
@@ -1044,7 +1071,7 @@ function emitAt(sortedCursor) {
         if (frame[0] === "cloud" || frame[0] === "odom") {
             frame[1].ts = playback.tsArray[index]
         }
-        dimApp.send(frame[0], frame[1])
+        sendFrame(frame[0], frame[1])
     }
 }
 
@@ -1056,6 +1083,26 @@ function sendTime() {
         playing: playback.playing,
         atEnd: playback.cursor >= playback.count,
     })
+}
+
+// `t0` is the single earliest message in the whole recording, so seeking there emits
+// that one message and nothing else — the app opens on an empty scene. Advance
+// instead to the first moment every render kind has appeared, so the opening view
+// has its clouds, robot pose, transforms and camera. Waiting for every *stream*
+// instead would be dragged deep into the recording by sparse ones (a 2-row tag
+// detection, a 1-row derived map).
+function openingPlayhead() {
+    const present = new Set()
+    for (let index = 0; index < playback.count; index++) {
+        present.add(playback.kindArray[index])
+    }
+    const seen = new Set()
+    let cursor = 0
+    while (cursor < playback.count && seen.size < present.size) {
+        seen.add(playback.kindArray[playback.order[cursor]])
+        cursor++
+    }
+    return playback.tsArray[playback.order[Math.max(0, cursor - 1)]]
 }
 
 // Advance the playhead to `targetTs`, emitting every entry that comes due.
