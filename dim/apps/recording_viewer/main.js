@@ -1277,6 +1277,10 @@ function selectCloudCursors(streamIndex, cursors, clamped) {
 // same lcm-msgs codec dimos uses). It opens the recording, aggregates, and writes
 // the new "<name>_aggregated" PointCloud2 stream back in place. This side just
 // launches it and forwards the JSON progress it prints.
+//
+// A prebuilt mapper for this platform ships in mapper/bin (from `nix build
+// .#native / .#darwin-x86 / .#linux-x86 / .#linux-arm64` in mapper/), so a user
+// machine needs no nix and no compile; `nix run` on the flake is the fallback.
 
 // Resolved through symlinks: an install dir may be symlinked at the package root
 // (dim installs/<pkg> -> a working clone), and nix refuses a `path:` flake whose
@@ -1287,6 +1291,12 @@ try {
     MAPPER_DIR = Deno.realPathSync(MAPPER_DIR)
 } catch { /* dir missing — let `nix run` report it */ }
 const AGG_VOXEL = 0.05                          // voxel edge (m), matches dimos --voxel
+
+function prebuiltMapper() {
+    const path = `${MAPPER_DIR}/bin/mapper-${Deno.build.os}-${Deno.build.arch}`
+    try { if (Deno.statSync(path).isFile) return path } catch { /* not shipped for this platform */ }
+    return null
+}
 
 // The single in-flight aggregation, so an "aggregateCancel" bus message can kill it.
 let activeAggregate = null
@@ -1300,11 +1310,9 @@ async function aggregateStream(streamName, options = {}) {
     }
     const aggregatedName = `${streamName}_aggregated`
 
-    // Spawn the Rust mapper via `nix run`. path: reads the flake dir directly (no
-    // git-tracking requirement); it stays cached after the first build. Map-cleaning
-    // filters (column carving, outlier removal) are opt-in from the aggregate modal.
+    // Map-cleaning filters (column carving, outlier removal) are opt-in from the
+    // aggregate modal.
     const mapperArgs = [
-        "run", `path:${MAPPER_DIR}`, "--",
         "--db", playback.path,
         "--stream", streamName,
         "--voxel", String(AGG_VOXEL),
@@ -1316,10 +1324,17 @@ async function aggregateStream(streamName, options = {}) {
         }
     }
     if (options.outlier) { mapperArgs.push("--outlier") }
+    // The prebuilt mapper execs directly. Without one, `nix run` the flake:
+    // path: reads the flake dir directly (no git-tracking requirement) and it
+    // stays cached after the first build.
+    const prebuilt = prebuiltMapper()
+    const [cmd, args] = prebuilt
+        ? [prebuilt, mapperArgs]
+        : ["nix", ["run", `path:${MAPPER_DIR}`, "--", ...mapperArgs]]
     let child
     try {
-        child = new Deno.Command("nix", {
-            args: mapperArgs,
+        child = new Deno.Command(cmd, {
+            args,
             stdout: "piped",
             stderr: "piped",
         }).spawn()

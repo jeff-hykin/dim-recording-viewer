@@ -1,1 +1,3 @@
 /target
+# nix gc-root symlinks
+result*
