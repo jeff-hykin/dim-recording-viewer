@@ -1273,27 +1273,19 @@ function selectCloudCursors(streamIndex, cursors, clamped) {
 // ── lidar map aggregation ─────────────────────────────────────────────────────
 // Accumulate every scan of a cloud stream into one world-frame map (dimos "map
 // global"). The whole pipeline — SQLite read, LCM decode/encode, world transform,
-// and voxel dedup — lives in the Rust mapper (mapper/, run via `nix run`, using the
+// and voxel dedup — lives in the Rust mapper (mapper/, using the
 // same lcm-msgs codec dimos uses). It opens the recording, aggregates, and writes
 // the new "<name>_aggregated" PointCloud2 stream back in place. This side just
 // launches it and forwards the JSON progress it prints.
 //
-// A prebuilt mapper for this platform ships in mapper/bin (from `nix build
+// A prebuilt mapper for each platform ships in mapper/bin (from `nix build
 // .#native / .#darwin-x86 / .#linux-x86 / .#linux-arm64` in mapper/), so a user
-// machine needs no nix and no compile; `nix run` on the flake is the fallback.
-
-// Resolved through symlinks: an install dir may be symlinked at the package root
-// (dim installs/<pkg> -> a working clone), and nix refuses a `path:` flake whose
-// path traverses a symlink. Falls back to the raw path rather than throwing here,
-// since a throw at module load takes the whole backend down.
-let MAPPER_DIR = new URL("./mapper", import.meta.url).pathname
-try {
-    MAPPER_DIR = Deno.realPathSync(MAPPER_DIR)
-} catch { /* dir missing — let `nix run` report it */ }
+// machine needs no compile; a dev build in mapper/result is the fallback.
+const MAPPER_DIR = new URL("./mapper", import.meta.url).pathname
 const AGG_VOXEL = 0.05                          // voxel edge (m), matches dimos --voxel
 
 function prebuiltMapper() {
-    // shipped binary, else the one the install step (`nix run .#install`) built into mapper/result
+    // shipped binary, else a dev build (`nix build` in mapper/)
     for (const path of [`${MAPPER_DIR}/bin/mapper-${Deno.build.os}-${Deno.build.arch}`, `${MAPPER_DIR}/result/bin/mapper`]) {
         try { if (Deno.statSync(path).isFile) return path } catch { /* not here */ }
     }
@@ -1326,17 +1318,15 @@ async function aggregateStream(streamName, options = {}) {
         }
     }
     if (options.outlier) { mapperArgs.push("--outlier") }
-    // The prebuilt mapper execs directly. Without one, `nix run` the flake:
-    // path: reads the flake dir directly (no git-tracking requirement) and it
-    // stays cached after the first build.
     const prebuilt = prebuiltMapper()
-    const [cmd, args] = prebuilt
-        ? [prebuilt, mapperArgs]
-        : ["nix", ["run", `path:${MAPPER_DIR}`, "--", ...mapperArgs]]
+    if (!prebuilt) {
+        dimApp.send("aggregateError", { stream: streamName, message: `No mapper binary for ${Deno.build.os}-${Deno.build.arch} in ${MAPPER_DIR}/bin` })
+        return
+    }
     let child
     try {
-        child = new Deno.Command(cmd, {
-            args,
+        child = new Deno.Command(prebuilt, {
+            args: mapperArgs,
             stdout: "piped",
             stderr: "piped",
         }).spawn()
