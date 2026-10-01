@@ -1293,8 +1293,10 @@ try {
 const AGG_VOXEL = 0.05                          // voxel edge (m), matches dimos --voxel
 
 function prebuiltMapper() {
-    const path = `${MAPPER_DIR}/bin/mapper-${Deno.build.os}-${Deno.build.arch}`
-    try { if (Deno.statSync(path).isFile) return path } catch { /* not shipped for this platform */ }
+    // shipped binary, else the one the install step (`nix run .#install`) built into mapper/result
+    for (const path of [`${MAPPER_DIR}/bin/mapper-${Deno.build.os}-${Deno.build.arch}`, `${MAPPER_DIR}/result/bin/mapper`]) {
+        try { if (Deno.statSync(path).isFile) return path } catch { /* not here */ }
+    }
     return null
 }
 

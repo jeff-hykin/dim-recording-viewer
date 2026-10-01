@@ -27,6 +27,17 @@ single static cloud with the transport bar parked at zero.
 
 ## Install
 
+### dimOS Desktop
+
+```sh
+dimos-desktop install https://github.com/jeff-hykin/dim-recording-viewer --ref dimos-desktop2
+```
+
+The install step (`nix run .#install`) caches the backend's imports and checks the shipped Rust mapper runs here
+(building it with nix if there's none for your platform).
+
+### Old dashboard
+
 ```sh
 dim install https://github.com/jeff-hykin/dim-recording-viewer
 ```

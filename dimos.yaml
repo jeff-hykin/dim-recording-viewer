@@ -1,0 +1,13 @@
+name: dim-recording-viewer
+install: nix run .#install
+apps:
+    - name: recording_viewer
+      title: Mapper
+      icon: dim/apps/recording_viewer/frontend/icon.svg
+      frontend: dim/apps/recording_viewer/frontend
+      backend:
+          dim_app: dim/apps/recording_viewer/main.js
+requires:
+    dimos-desktop:
+        version: ">=0.2.0"
+        apis: { app.frontend: 1, app.dim_app: 1 }
