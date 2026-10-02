@@ -1,7 +1,7 @@
 /*
   DimOS UI theme — "Science" variant.
   A professional, high-tech laboratory design system. Dark is the default look
-  (MemWorld's near-black navy, mint accent, as in dim-live-viewer); light remains.
+  (MemWorld's near-black navy, dimOS blue accent, mint for status); light remains.
 
   Same component API as the other themes (.dim-* classes). Light tokens sit on
   :root; add `dark` to <body class="science"> (every dim app does) for dark mode.
@@ -25,16 +25,18 @@
     --border: oklch(0.903 0.004 254);
     --input: oklch(0.88 0.005 254);
 
-    /* ── signature champagne accent + refined steel for data ── */
-    --primary: oklch(0.53 0.052 244); /* muted steel (silvery, not vivid) */
-    --primary-fg: oklch(0.99 0.001 250);
+    /* ── dimOS blue is the accent (interactive + identity); green is status only ── */
+    --primary: #1f6fd6; /* dimOS blue */
+    --primary-hover: #185bb3;
+    --primary-soft: rgba(31, 111, 214, 0.14);
+    --primary-fg: #ffffff;
     --info: oklch(0.6 0.068 212); /* muted cyan, data / live */
     --ok: oklch(0.58 0.092 158);
     --warn: oklch(0.69 0.105 75); /* amber (status only) */
     --danger: oklch(0.55 0.15 28);
     --danger-fg: oklch(0.99 0.001 250);
     --violet: oklch(0.52 0.09 292); /* tertiary */
-    --ring: oklch(0.53 0.052 244);
+    --ring: #1f6fd6;
 
     /* ── type — a refined neutral grotesque, the way marque digital clusters set
        text: Helvetica Neue / Neue Haas feel, with system fallbacks ── */
@@ -59,7 +61,7 @@
 
     /* faint cool grid behind the page */
     --grid-line: oklch(0.5 0.01 256 / 0.04);
-    --ring-soft: oklch(0.53 0.052 244 / 0.25);
+    --ring-soft: rgba(31, 111, 214, 0.25);
     --glow: none;
 
     /* ── code / syntax highlighting (traceback + log panels) ──
@@ -103,8 +105,10 @@ body.science.dark {
     --border: #22324a;
     --input: #2a3d58;
 
-    /* mint accent + sky for data */
-    --primary: #7af0a8;
+    /* dimOS blue accent (interactive + identity), mint only for status/success */
+    --primary: #4da3ff; /* dimOS blue */
+    --primary-hover: #7fc8ff;
+    --primary-soft: rgba(77, 163, 255, 0.16);
     --primary-fg: #06090f;
     --info: #7fc8ff;
     --ok: #7af0a8;
@@ -112,7 +116,7 @@ body.science.dark {
     --danger: #ff5f6d;
     --danger-fg: #06090f;
     --violet: #b79cff;
-    --ring: #7af0a8;
+    --ring: #4da3ff;
 
     /* deep, neutral elevation */
     --shadow-2xs: 0 1px 2px 0 rgba(0, 0, 0, 0.45);
@@ -122,9 +126,9 @@ body.science.dark {
     --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.7);
     --shadow-lg: 0 12px 36px -10px rgba(0, 0, 0, 0.8);
 
-    /* faint sky grid + a soft mint focus ring */
+    /* faint sky grid + a soft blue focus ring */
     --grid-line: rgba(127, 200, 255, 0.03);
-    --ring-soft: rgba(122, 240, 168, 0.22);
+    --ring-soft: rgba(77, 163, 255, 0.24);
     --glow: none;
 
     /* ── code / syntax highlighting — deep well, luminous tokens ── */
@@ -222,7 +226,7 @@ body.science {
     color: var(--primary);
     text-decoration: none;
     font-weight: 500;
-    border-bottom: 1px solid color-mix(in oklch, var(--primary) 35%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
 }
 .dim-link:hover {
     border-color: var(--primary);
@@ -305,8 +309,8 @@ body.science {
         var(--glow);
 }
 .dim-btn.primary:hover {
-    background: color-mix(in oklch, var(--primary) 88%, black);
-    border-color: color-mix(in oklch, var(--primary) 88%, black);
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
 }
 
 .dim-btn.accent {
@@ -370,22 +374,22 @@ body.science {
 }
 .dim-badge.info {
     color: color-mix(in oklch, var(--info) 72%, var(--fg));
-    border-color: color-mix(in oklch, var(--info) 38%, transparent);
+    border-color: color-mix(in srgb, var(--info) 38%, transparent);
     background: color-mix(in oklch, var(--info) 14%, var(--card));
 }
 .dim-badge.ok {
     color: color-mix(in oklch, var(--ok) 82%, var(--fg));
-    border-color: color-mix(in oklch, var(--ok) 50%, transparent);
+    border-color: color-mix(in srgb, var(--ok) 50%, transparent);
     background: color-mix(in oklch, var(--ok) 28%, var(--card));
 }
 .dim-badge.warn {
     color: color-mix(in oklch, var(--warn) 74%, var(--fg));
-    border-color: color-mix(in oklch, var(--warn) 52%, transparent);
+    border-color: color-mix(in srgb, var(--warn) 52%, transparent);
     background: color-mix(in oklch, var(--warn) 32%, var(--card));
 }
 .dim-badge.danger {
     color: color-mix(in oklch, var(--danger) 80%, var(--fg));
-    border-color: color-mix(in oklch, var(--danger) 38%, transparent);
+    border-color: color-mix(in srgb, var(--danger) 38%, transparent);
     background: color-mix(in oklch, var(--danger) 12%, var(--card));
 }
 .dim-badge .dot {
@@ -699,18 +703,18 @@ body.science {
     height: 9px;
     border-radius: 50%;
     background: var(--info);
-    box-shadow: 0 0 0 0 color-mix(in oklch, var(--info) 50%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 50%, transparent);
     animation: sci-pulse 2.4s ease-out infinite;
 }
 @keyframes sci-pulse {
     0% {
-        box-shadow: 0 0 0 0 color-mix(in oklch, var(--info) 45%, transparent);
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 45%, transparent);
     }
     70% {
-        box-shadow: 0 0 0 8px color-mix(in oklch, var(--info) 0%, transparent);
+        box-shadow: 0 0 0 8px color-mix(in srgb, var(--info) 0%, transparent);
     }
     100% {
-        box-shadow: 0 0 0 0 color-mix(in oklch, var(--info) 0%, transparent);
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 0%, transparent);
     }
 }
 
@@ -729,17 +733,17 @@ body.science {
     border-left: 3px solid var(--primary);
 }
 .dim-alert.info {
-    border-color: color-mix(in oklch, var(--info) 35%, transparent);
+    border-color: color-mix(in srgb, var(--info) 35%, transparent);
     background: color-mix(in oklch, var(--info) 8%, var(--card));
     border-left-color: var(--info);
 }
 .dim-alert.danger {
-    border-color: color-mix(in oklch, var(--danger) 35%, transparent);
+    border-color: color-mix(in srgb, var(--danger) 35%, transparent);
     background: color-mix(in oklch, var(--danger) 8%, var(--card));
     border-left-color: var(--danger);
 }
 .dim-alert.warn {
-    border-color: color-mix(in oklch, var(--warn) 38%, transparent);
+    border-color: color-mix(in srgb, var(--warn) 38%, transparent);
     background: color-mix(in oklch, var(--warn) 12%, var(--card));
     border-left-color: var(--warn);
 }
@@ -919,7 +923,7 @@ body.science {
 /* Scrollbars — thin, transparent track, subtle rounded thumb that darkens on hover */
 * {
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklch, var(--muted-fg) 45%, transparent) transparent;
+    scrollbar-color: color-mix(in srgb, var(--muted-fg) 45%, transparent) transparent;
 }
 ::-webkit-scrollbar {
     width: 10px;
@@ -932,12 +936,12 @@ body.science {
     background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-    background: color-mix(in oklch, var(--muted-fg) 40%, transparent);
+    background: color-mix(in srgb, var(--muted-fg) 40%, transparent);
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in oklch, var(--muted-fg) 70%, transparent);
+    background: color-mix(in srgb, var(--muted-fg) 70%, transparent);
     background-clip: padding-box;
 }
