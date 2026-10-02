@@ -1,0 +1,943 @@
+/*
+  DimOS UI theme — "Science" variant.
+  A professional, high-tech laboratory design system. Mostly white in light
+  mode (clean, clinical, precise) with a high-class deep-charcoal dark mode.
+
+  Same component API as the other themes (.dim-* classes). Light is the
+  default; add `dark` to <body class="science"> (or toggle it) for dark mode.
+  Every color is a CSS variable — light values on :root, dark overrides on
+  body.science.dark — so components never hard-code a color.
+*/
+
+:root {
+    /* ── neutrals (light · warm pearl showroom) ──
+       Warm ivory rather than clinical white — the inside of a luxury cabin
+       in daylight: soft, expensive, a faint champagne warmth in every grey. */
+    --bg: oklch(0.985 0.0015 250);
+    --card: oklch(0.998 0.001 250);
+    --fg: oklch(0.24 0.006 262); /* neutral graphite */
+    --muted: oklch(0.963 0.0025 250);
+    --muted-fg: oklch(0.505 0.008 258);
+    --accent: oklch(0.955 0.004 250); /* hover surface */
+    --accent-fg: oklch(0.24 0.006 262);
+    --secondary: oklch(0.943 0.005 252); /* chip surface */
+    --secondary-fg: oklch(0.4 0.014 260);
+    --border: oklch(0.903 0.004 254);
+    --input: oklch(0.88 0.005 254);
+
+    /* ── signature champagne accent + refined steel for data ── */
+    --primary: oklch(0.53 0.052 244); /* muted steel (silvery, not vivid) */
+    --primary-fg: oklch(0.99 0.001 250);
+    --info: oklch(0.6 0.068 212); /* muted cyan, data / live */
+    --ok: oklch(0.58 0.092 158);
+    --warn: oklch(0.69 0.105 75); /* amber (status only) */
+    --danger: oklch(0.55 0.15 28);
+    --danger-fg: oklch(0.99 0.001 250);
+    --violet: oklch(0.52 0.09 292); /* tertiary */
+    --ring: oklch(0.53 0.052 244);
+
+    /* ── type — a refined neutral grotesque, the way marque digital clusters set
+       text: Helvetica Neue / Neue Haas feel, with system fallbacks ── */
+    --sans: "Helvetica Neue", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    /* tracking scale — luxury sets labels wide and airy */
+    --track-label: 0.18em;
+    --track-btn: 0.12em;
+
+    /* ── radius — crisp, engineered ── */
+    --radius: 0.375rem;
+    --radius-sm: calc(var(--radius) - 2px);
+    --radius-lg: calc(var(--radius) + 2px);
+
+    /* ── elevation — soft, cool-tinted ── */
+    --shadow-2xs: 0 1px 2px 0 oklch(0.5 0.05 260 / 0.04);
+    --shadow-xs: 0 1px 2px 0 oklch(0.5 0.05 260 / 0.06);
+    --shadow-sm: 0 1px 2px -1px oklch(0.5 0.05 260 / 0.08), 0 2px 6px -1px oklch(0.5 0.05 260 / 0.06);
+    --shadow: 0 1px 3px 0 oklch(0.5 0.05 260 / 0.08), 0 4px 12px -2px oklch(0.5 0.05 260 / 0.07);
+    --shadow-md: 0 2px 6px -1px oklch(0.5 0.05 260 / 0.1), 0 8px 20px -4px oklch(0.5 0.05 260 / 0.08);
+    --shadow-lg: 0 8px 30px -6px oklch(0.5 0.05 260 / 0.12);
+
+    /* faint cool grid behind the page */
+    --grid-line: oklch(0.5 0.01 256 / 0.04);
+    --ring-soft: oklch(0.53 0.052 244 / 0.25);
+    --glow: none;
+
+    /* ── code / syntax highlighting (traceback + log panels) ──
+       Light code well: a soft slate on the page, dark-on-light tokens. */
+    --code-bg: oklch(0.965 0.003 250);
+    --code-fg: oklch(0.30 0.008 260);
+    --code-line: oklch(0.46 0.01 258); /* dim monospace log text */
+    --code-kw: oklch(0.50 0.16 300); /* keywords — violet */
+    --code-str: oklch(0.52 0.11 150); /* strings — green */
+    --code-num: oklch(0.55 0.14 60); /* numbers — amber */
+    --code-com: oklch(0.62 0.01 260); /* comments — grey */
+    --code-loc: oklch(0.50 0.14 250); /* file:line link — blue */
+    --code-func: oklch(0.53 0.11 70); /* function name — bronze */
+
+    /* ── categorical palette (module dots, future charts) ── */
+    --cat-1: oklch(0.62 0.15 250);
+    --cat-2: oklch(0.62 0.10 190);
+    --cat-3: oklch(0.55 0.15 300);
+    --cat-4: oklch(0.62 0.14 60);
+
+    /* ── terminal (live ANSI console) — always dark in both themes, since the
+       ANSI 16-color palette assumes a dark background ── */
+    --term-bg: oklch(0.145 0.006 256);
+    --term-fg: oklch(0.87 0.012 250);
+    --term-dim: oklch(0.5 0.01 256);
+}
+
+body.science.dark {
+    /* ── neutrals (dark · warm obsidian) ──
+       A luxury cabin at night: deep, warm near-black with a faint champagne
+       undertone (warm hue, very low chroma) instead of a cool blue cast.
+       Generous tonal steps so panels read as layered black lacquer. */
+    --bg: oklch(0.16 0.004 256);
+    --card: oklch(0.2 0.004 256);
+    --fg: oklch(0.945 0.003 250); /* neutral pearl text */
+    --muted: oklch(0.238 0.005 256);
+    --muted-fg: oklch(0.66 0.006 252);
+    --accent: oklch(0.256 0.005 256);
+    --accent-fg: oklch(0.945 0.003 250);
+    --secondary: oklch(0.262 0.006 256);
+    --secondary-fg: oklch(0.86 0.006 250);
+    --border: oklch(0.3 0.005 256);
+    --input: oklch(0.33 0.005 256);
+
+    /* refined steel/platinum accent + muted cyan for data */
+    --primary: oklch(0.75 0.055 244);
+    --primary-fg: oklch(0.18 0.008 256);
+    --info: oklch(0.74 0.07 206); /* muted cyan, data / live */
+    --ok: oklch(0.75 0.092 158);
+    --warn: oklch(0.8 0.1 74); /* amber (status only) */
+    --danger: oklch(0.64 0.13 28);
+    --danger-fg: oklch(0.18 0.008 256);
+    --violet: oklch(0.68 0.085 292);
+    --ring: oklch(0.75 0.055 244);
+
+    /* deep, soft, neutral elevation — lacquer depth, no colored bloom */
+    --shadow-2xs: 0 1px 2px 0 oklch(0 0 0 / 0.45);
+    --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.5);
+    --shadow-sm: 0 1px 2px -1px oklch(0 0 0 / 0.6), 0 2px 8px -3px oklch(0 0 0 / 0.55);
+    --shadow: 0 2px 6px -2px oklch(0 0 0 / 0.6), 0 10px 30px -10px oklch(0 0 0 / 0.65);
+    --shadow-md: 0 4px 14px -4px oklch(0 0 0 / 0.65), 0 18px 44px -14px oklch(0 0 0 / 0.65);
+    --shadow-lg: 0 18px 52px -14px oklch(0 0 0 / 0.7);
+
+    /* barely-there warm grid + a clean gold hairline ring (no glow) */
+    --grid-line: oklch(0.85 0.004 250 / 0.025);
+    --ring-soft: oklch(0.75 0.055 244 / 0.28);
+    --glow: none;
+
+    /* ── code / syntax highlighting — deep well, luminous tokens ── */
+    --code-bg: oklch(0.145 0.006 256); /* near-black code well */
+    --code-fg: oklch(0.87 0.012 250);
+    --code-line: oklch(0.78 0.02 250);
+    --code-kw: oklch(0.72 0.14 305); /* violet */
+    --code-str: oklch(0.85 0.14 152); /* green */
+    --code-num: oklch(0.86 0.13 90); /* amber */
+    --code-com: oklch(0.55 0.01 260); /* grey */
+    --code-loc: oklch(0.76 0.11 250); /* blue */
+    --code-func: oklch(0.76 0.11 70); /* bronze */
+
+    /* ── categorical palette (module dots, future charts) ── */
+    --cat-1: oklch(0.72 0.13 250);
+    --cat-2: oklch(0.72 0.09 190);
+    --cat-3: oklch(0.72 0.12 305);
+    --cat-4: oklch(0.78 0.12 75);
+
+    /* ── terminal (live ANSI console) — dark in both themes ── */
+    --term-bg: oklch(0.145 0.006 256);
+    --term-fg: oklch(0.87 0.012 250);
+    --term-dim: oklch(0.5 0.01 256);
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body.science {
+    margin: 0;
+    color: var(--fg);
+    font: 14px/1.65 var(--sans);
+    letter-spacing: 0.005em;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* faint precision grid — the "lab bench" texture */
+    background-color: var(--bg);
+    background-image:
+        linear-gradient(var(--grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 28px 28px, 28px 28px;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ───────────────────────── typography ───────────────────────── */
+
+.dim-h1,
+.dim-h2,
+.dim-h3 {
+    margin: 0;
+    color: var(--fg);
+}
+/* display heading — large, light, airy (marque hero type) */
+.dim-h1 {
+    font-size: 30px;
+    font-weight: 300;
+    line-height: 1.18;
+    letter-spacing: 0.002em;
+}
+/* section labels — small, uppercase, widely tracked (instrument legend) */
+.dim-h2 {
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: var(--track-label);
+    text-transform: uppercase;
+}
+.dim-h3 {
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.6;
+    letter-spacing: var(--track-label);
+    text-transform: uppercase;
+    color: var(--muted-fg);
+}
+
+.dim-label {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: var(--track-label);
+    text-transform: uppercase;
+    color: var(--muted-fg);
+}
+.dim-muted {
+    color: var(--muted-fg);
+}
+.dim-mono {
+    font-family: var(--mono);
+}
+.dim-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+    border-bottom: 1px solid color-mix(in oklch, var(--primary) 35%, transparent);
+}
+.dim-link:hover {
+    border-color: var(--primary);
+}
+
+/* ───────────────────────── surfaces ──────────────────────────── */
+
+.dim-panel,
+.dim-card {
+    background: var(--card);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+.dim-card {
+    padding: 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.dim-card-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: var(--track-label);
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.dim-card-desc {
+    color: var(--muted-fg);
+    font-size: 13px;
+    margin-top: -8px;
+}
+
+/* ───────────────────────── buttons ──────────────────────────── */
+
+.dim-btn {
+    appearance: none;
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: var(--track-btn);
+    text-transform: uppercase;
+    color: var(--fg);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 11px 22px;
+    box-shadow: var(--shadow-2xs);
+    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+.dim-btn:hover {
+    background: var(--accent);
+    border-color: color-mix(in oklch, var(--border) 60%, var(--primary));
+}
+.dim-btn:active {
+    transform: translateY(0.5px);
+}
+.dim-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--ring-soft);
+    border-color: var(--ring);
+}
+.dim-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.dim-btn.primary {
+    color: var(--primary-fg);
+    background: var(--primary);
+    border-color: var(--primary);
+    box-shadow:
+        var(--shadow-2xs),
+        var(--glow);
+}
+.dim-btn.primary:hover {
+    background: color-mix(in oklch, var(--primary) 88%, black);
+    border-color: color-mix(in oklch, var(--primary) 88%, black);
+}
+
+.dim-btn.accent {
+    color: var(--primary-fg);
+    background: var(--info);
+    border-color: var(--info);
+}
+.dim-btn.accent:hover {
+    background: color-mix(in oklch, var(--info) 88%, black);
+}
+
+.dim-btn.ghost {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    color: var(--fg);
+}
+.dim-btn.ghost:hover {
+    background: var(--accent);
+}
+
+.dim-btn.danger {
+    color: var(--danger-fg);
+    background: var(--danger);
+    border-color: var(--danger);
+}
+.dim-btn.danger:hover {
+    background: color-mix(in oklch, var(--danger) 88%, black);
+}
+
+.dim-btn.sm {
+    padding: 8px 15px;
+    font-size: 10px;
+}
+.dim-btn.icon {
+    padding: 10px 14px;
+    letter-spacing: normal;
+}
+
+/* ───────────────────────── badges ──────────────────────────── */
+
+.dim-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--sans);
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--secondary-fg);
+    background: var(--secondary);
+}
+.dim-badge.solid {
+    background: var(--primary);
+    color: var(--primary-fg);
+    border-color: var(--primary);
+}
+.dim-badge.info {
+    color: color-mix(in oklch, var(--info) 72%, var(--fg));
+    border-color: color-mix(in oklch, var(--info) 38%, transparent);
+    background: color-mix(in oklch, var(--info) 14%, var(--card));
+}
+.dim-badge.ok {
+    color: color-mix(in oklch, var(--ok) 82%, var(--fg));
+    border-color: color-mix(in oklch, var(--ok) 50%, transparent);
+    background: color-mix(in oklch, var(--ok) 28%, var(--card));
+}
+.dim-badge.warn {
+    color: color-mix(in oklch, var(--warn) 74%, var(--fg));
+    border-color: color-mix(in oklch, var(--warn) 52%, transparent);
+    background: color-mix(in oklch, var(--warn) 32%, var(--card));
+}
+.dim-badge.danger {
+    color: color-mix(in oklch, var(--danger) 80%, var(--fg));
+    border-color: color-mix(in oklch, var(--danger) 38%, transparent);
+    background: color-mix(in oklch, var(--danger) 12%, var(--card));
+}
+.dim-badge .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+/* ───────────────────────── form fields ─────────────────────── */
+
+.dim-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+.dim-field > label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg);
+}
+
+.dim-input,
+.dim-textarea,
+.dim-select {
+    appearance: none;
+    font-family: var(--sans);
+    font-size: 14px;
+    color: var(--fg);
+    background: var(--card);
+    border: 1px solid var(--input);
+    border-radius: var(--radius);
+    padding: 9px 12px;
+    outline: none;
+    width: 100%;
+    box-shadow: var(--shadow-2xs);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.dim-input::placeholder,
+.dim-textarea::placeholder {
+    color: var(--muted-fg);
+}
+.dim-input:focus,
+.dim-textarea:focus,
+.dim-select:focus {
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px var(--ring-soft);
+}
+.dim-textarea {
+    resize: vertical;
+    min-height: 90px;
+    line-height: 1.5;
+}
+.dim-select {
+    cursor: pointer;
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--muted-fg) 50%),
+        linear-gradient(135deg, var(--muted-fg) 50%, transparent 50%);
+    background-position: right 16px center, right 11px center;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 34px;
+}
+
+/* checkbox + radio */
+.dim-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 13.5px;
+    color: var(--fg);
+}
+.dim-check input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.dim-check .box,
+.dim-check .ring {
+    width: 17px;
+    height: 17px;
+    border: 1px solid var(--input);
+    border-radius: var(--radius-sm);
+    background: var(--card);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    box-shadow: var(--shadow-2xs);
+    transition: all 0.13s ease;
+}
+.dim-check .ring {
+    border-radius: 50%;
+}
+.dim-check input:checked + .box {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+.dim-check input:checked + .box::after {
+    content: "✓";
+    color: var(--primary-fg);
+    font-size: 12px;
+    line-height: 1;
+}
+.dim-check input:checked + .ring {
+    border-color: var(--primary);
+}
+.dim-check input:checked + .ring::after {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--primary);
+}
+.dim-check input:focus-visible + .box,
+.dim-check input:focus-visible + .ring {
+    box-shadow: 0 0 0 3px var(--ring-soft);
+    border-color: var(--ring);
+}
+
+/* switch */
+.dim-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+.dim-switch input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.dim-switch .track {
+    width: 42px;
+    height: 24px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--muted);
+    position: relative;
+    transition: all 0.16s ease;
+}
+.dim-switch .track::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--card);
+    box-shadow: var(--shadow-sm);
+    transition: all 0.16s ease;
+}
+.dim-switch input:checked + .track {
+    background: var(--primary);
+    border-color: var(--primary);
+    box-shadow: var(--glow);
+}
+.dim-switch input:checked + .track::after {
+    left: 20px;
+}
+
+/* slider */
+.dim-range {
+    width: 100%;
+    appearance: none;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--muted);
+    outline: none;
+    cursor: pointer;
+}
+.dim-range::-webkit-slider-thumb {
+    appearance: none;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: 2px solid var(--card);
+    box-shadow: var(--shadow);
+    cursor: pointer;
+}
+.dim-range::-moz-range-thumb {
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    border: 2px solid var(--card);
+    background: var(--primary);
+    box-shadow: var(--shadow);
+    cursor: pointer;
+}
+
+/* ───────────────────────── progress ────────────────────────── */
+
+.dim-progress {
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--muted);
+    overflow: hidden;
+}
+.dim-progress > span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--primary);
+}
+.dim-progress.info > span {
+    background: var(--info);
+}
+.dim-progress.warn > span {
+    background: var(--warn);
+}
+.dim-progress.ok > span {
+    background: var(--ok);
+}
+
+/* ───────────────────────── tabs ─────────────────────────────── */
+
+.dim-tabs {
+    display: inline-flex;
+    gap: 3px;
+    padding: 3px;
+    border-radius: var(--radius);
+    background: var(--muted);
+    border: 1px solid var(--border);
+}
+.dim-tab {
+    appearance: none;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: var(--sans);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    padding: 8px 16px;
+    transition: all 0.14s ease;
+}
+.dim-tab:hover {
+    color: var(--fg);
+}
+.dim-tab[aria-selected="true"] {
+    color: var(--fg);
+    background: var(--card);
+    box-shadow: var(--shadow-2xs);
+}
+
+/* ───────────────────────── table ───────────────────────────── */
+
+.dim-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+}
+.dim-table th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+}
+.dim-table td {
+    padding: 15px 18px;
+    border-bottom: 1px solid var(--border);
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+}
+.dim-table tr:last-child td {
+    border-bottom: none;
+}
+.dim-table tr:hover td {
+    background: var(--muted);
+}
+
+/* ───────────────────────── avatar ──────────────────────────── */
+
+.dim-avatar {
+    width: 38px;
+    height: 38px;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary-fg);
+    background: var(--primary);
+}
+.dim-avatar.violet {
+    background: var(--violet);
+}
+.dim-avatar.info {
+    background: var(--info);
+}
+
+/* ───────────────────────── status dot ──────────────────────── */
+
+.dim-live-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--info);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--info) 50%, transparent);
+    animation: sci-pulse 2.4s ease-out infinite;
+}
+@keyframes sci-pulse {
+    0% {
+        box-shadow: 0 0 0 0 color-mix(in oklch, var(--info) 45%, transparent);
+    }
+    70% {
+        box-shadow: 0 0 0 8px color-mix(in oklch, var(--info) 0%, transparent);
+    }
+    100% {
+        box-shadow: 0 0 0 0 color-mix(in oklch, var(--info) 0%, transparent);
+    }
+}
+
+/* ───────────────────────── alert ───────────────────────────── */
+
+.dim-alert {
+    display: flex;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--fg);
+    font-size: 13.5px;
+    box-shadow: var(--shadow-2xs);
+    border-left: 3px solid var(--primary);
+}
+.dim-alert.info {
+    border-color: color-mix(in oklch, var(--info) 35%, transparent);
+    background: color-mix(in oklch, var(--info) 8%, var(--card));
+    border-left-color: var(--info);
+}
+.dim-alert.danger {
+    border-color: color-mix(in oklch, var(--danger) 35%, transparent);
+    background: color-mix(in oklch, var(--danger) 8%, var(--card));
+    border-left-color: var(--danger);
+}
+.dim-alert.warn {
+    border-color: color-mix(in oklch, var(--warn) 38%, transparent);
+    background: color-mix(in oklch, var(--warn) 12%, var(--card));
+    border-left-color: var(--warn);
+}
+.dim-alert .dim-alert-title {
+    font-weight: 600;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    margin-bottom: 4px;
+}
+
+/* ───────────────────────── stepper ─────────────────────────── */
+
+.dim-stepper {
+    display: inline-flex;
+    align-items: stretch;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-2xs);
+}
+.dim-stepper button {
+    appearance: none;
+    cursor: pointer;
+    width: 42px;
+    font-family: var(--sans);
+    font-size: 18px;
+    line-height: 1;
+    color: var(--fg);
+    background: var(--card);
+    border: none;
+    transition: background 0.12s ease;
+}
+.dim-stepper button:hover {
+    background: var(--accent);
+}
+.dim-stepper .val {
+    min-width: 104px;
+    padding: 14px 12px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 32px;
+    font-weight: 300;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+}
+
+/* ───────────────────────── bar chart ───────────────────────── */
+
+.dim-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 5px;
+    height: 80px;
+}
+.dim-bars .bar {
+    flex: 1;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    background: color-mix(in oklch, var(--primary) 24%, var(--muted));
+    transition: background 0.14s ease;
+}
+.dim-bars .bar:hover {
+    background: color-mix(in oklch, var(--primary) 48%, var(--muted));
+}
+.dim-bars .bar.hot {
+    background: var(--primary);
+}
+
+/* ───────────────────────── line chart ──────────────────────── */
+
+.dim-chart {
+    width: 100%;
+    height: 150px;
+    display: block;
+    overflow: visible;
+}
+.dim-chart .grid line {
+    stroke: var(--border);
+    stroke-width: 1;
+}
+.dim-chart .axis {
+    fill: var(--muted-fg);
+    font-family: var(--mono);
+    font-size: 9px;
+}
+.dim-chart .series {
+    fill: none;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.dim-chart .series.a {
+    stroke: var(--primary);
+}
+.dim-chart .series.b {
+    stroke: var(--info);
+    opacity: 0.85;
+}
+.dim-chart .node {
+    fill: var(--card);
+    stroke: var(--primary);
+    stroke-width: 2;
+}
+
+/* ───────────────────────── calendar ────────────────────────── */
+
+.dim-cal {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.dim-cal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.dim-cal-head .mo {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--fg);
+}
+.dim-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+.dim-cal-grid .dow {
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted-fg);
+    padding-bottom: 2px;
+}
+.dim-cal-grid .day {
+    appearance: none;
+    cursor: pointer;
+    aspect-ratio: 1;
+    min-height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--fg);
+    background: transparent;
+    border: 1px solid transparent;
+    transition: all 0.12s ease;
+}
+.dim-cal-grid .day:hover {
+    background: var(--accent);
+}
+.dim-cal-grid .day.muted {
+    color: var(--muted-fg);
+    background: transparent;
+    cursor: default;
+}
+.dim-cal-grid .day.range {
+    background: color-mix(in oklch, var(--primary) 14%, var(--card));
+}
+.dim-cal-grid .day.sel {
+    background: var(--primary);
+    color: var(--primary-fg);
+    box-shadow: var(--glow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+    }
+}
+
+/* Scrollbars — thin, transparent track, subtle rounded thumb that darkens on hover */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--muted-fg) 45%, transparent) transparent;
+}
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--muted-fg) 40%, transparent);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--muted-fg) 70%, transparent);
+    background-clip: padding-box;
+}

@@ -1,4 +1,3 @@
 # A dimOS Desktop app. Format: https://github.com/dimensionalOS/dimos-desktop/blob/jeff/rust_desktop/docs/apps.md
 title: Mapper
-dimos-desktop-api: ">=1 <2"
-dimos-api: [/ws]
+dimos-desktop-api: ">=2 <3"

@@ -2,16 +2,16 @@
   "nodes": {
     "dim-app": {
       "locked": {
-        "lastModified": 1790867097,
-        "narHash": "sha256-pD+DUEiDzx7UQroP1Q7yg1XtnB/+M+Le+c+ibgUTZMs=",
+        "lastModified": 1790903678,
+        "narHash": "sha256-omIHdp0HGhyK/GKZs1ATnW+00BNeWi/oV/62T8Wa7jw=",
         "owner": "jeff-hykin",
         "repo": "dim-app",
-        "rev": "bdee113195d5d4d417213423d2194c25868eaa11",
+        "rev": "6add7a7e58592c1295007d26803afad815bcbcca",
         "type": "github"
       },
       "original": {
         "owner": "jeff-hykin",
-        "ref": "v0.4.0",
+        "ref": "v0.5.0",
         "repo": "dim-app",
         "type": "github"
       }

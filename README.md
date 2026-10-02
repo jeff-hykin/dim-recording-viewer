@@ -1,6 +1,6 @@
 # dim-recording-viewer
 
-A [DimOS dashboard](https://github.com/jeff-hykin/dim-app) app that renders a
+A [dimOS Desktop](https://github.com/dimensionalOS/dimos-desktop) app that renders a
 **recorded** DimOS stack in 3D. Drop (or browse to) a dimos "memory2" `.db` / `.mcap`
 recording and it plays back as a live 3D scene — the same way
 [dim-live-viewer](https://github.com/jeff-hykin/dim-live-viewer) shows a *running*
