@@ -1,10 +1,10 @@
 /*
   DimOS UI theme — "Science" variant.
-  A professional, high-tech laboratory design system. Mostly white in light
-  mode (clean, clinical, precise) with a high-class deep-charcoal dark mode.
+  A professional, high-tech laboratory design system. Dark is the default look
+  (MemWorld's near-black navy, mint accent, as in dim-live-viewer); light remains.
 
-  Same component API as the other themes (.dim-* classes). Light is the
-  default; add `dark` to <body class="science"> (or toggle it) for dark mode.
+  Same component API as the other themes (.dim-* classes). Light tokens sit on
+  :root; add `dark` to <body class="science"> (every dim app does) for dark mode.
   Every color is a CSS variable — light values on :root, dark overrides on
   body.science.dark — so components never hard-code a color.
 */
@@ -88,67 +88,66 @@
 }
 
 body.science.dark {
-    /* ── neutrals (dark · warm obsidian) ──
-       A luxury cabin at night: deep, warm near-black with a faint champagne
-       undertone (warm hue, very low chroma) instead of a cool blue cast.
-       Generous tonal steps so panels read as layered black lacquer. */
-    --bg: oklch(0.16 0.004 256);
-    --card: oklch(0.2 0.004 256);
-    --fg: oklch(0.945 0.003 250); /* neutral pearl text */
-    --muted: oklch(0.238 0.005 256);
-    --muted-fg: oklch(0.66 0.006 252);
-    --accent: oklch(0.256 0.005 256);
-    --accent-fg: oklch(0.945 0.003 250);
-    --secondary: oklch(0.262 0.006 256);
-    --secondary-fg: oklch(0.86 0.006 250);
-    --border: oklch(0.3 0.005 256);
-    --input: oklch(0.33 0.005 256);
+    /* ── neutrals (dark · MemWorld HUD, matching dim-live-viewer) ──
+       Near-black navy page, slightly lifted panels, cool steel hairlines. */
+    color-scheme: dark;
+    --bg: #06090f;
+    --card: #0b1018;
+    --fg: #e6eef7;
+    --muted: #0e1520;
+    --muted-fg: #8fa3b8;
+    --accent: #142030; /* hover surface */
+    --accent-fg: #e6eef7;
+    --secondary: #0e1520; /* chip surface */
+    --secondary-fg: #b9c7d6;
+    --border: #22324a;
+    --input: #2a3d58;
 
-    /* refined steel/platinum accent + muted cyan for data */
-    --primary: oklch(0.75 0.055 244);
-    --primary-fg: oklch(0.18 0.008 256);
-    --info: oklch(0.74 0.07 206); /* muted cyan, data / live */
-    --ok: oklch(0.75 0.092 158);
-    --warn: oklch(0.8 0.1 74); /* amber (status only) */
-    --danger: oklch(0.64 0.13 28);
-    --danger-fg: oklch(0.18 0.008 256);
-    --violet: oklch(0.68 0.085 292);
-    --ring: oklch(0.75 0.055 244);
+    /* mint accent + sky for data */
+    --primary: #7af0a8;
+    --primary-fg: #06090f;
+    --info: #7fc8ff;
+    --ok: #7af0a8;
+    --warn: #ffd166;
+    --danger: #ff5f6d;
+    --danger-fg: #06090f;
+    --violet: #b79cff;
+    --ring: #7af0a8;
 
-    /* deep, soft, neutral elevation — lacquer depth, no colored bloom */
-    --shadow-2xs: 0 1px 2px 0 oklch(0 0 0 / 0.45);
-    --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.5);
-    --shadow-sm: 0 1px 2px -1px oklch(0 0 0 / 0.6), 0 2px 8px -3px oklch(0 0 0 / 0.55);
-    --shadow: 0 2px 6px -2px oklch(0 0 0 / 0.6), 0 10px 30px -10px oklch(0 0 0 / 0.65);
-    --shadow-md: 0 4px 14px -4px oklch(0 0 0 / 0.65), 0 18px 44px -14px oklch(0 0 0 / 0.65);
-    --shadow-lg: 0 18px 52px -14px oklch(0 0 0 / 0.7);
+    /* deep, neutral elevation */
+    --shadow-2xs: 0 1px 2px 0 rgba(0, 0, 0, 0.45);
+    --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+    --shadow-sm: 0 1px 2px -1px rgba(0, 0, 0, 0.6), 0 2px 8px -3px rgba(0, 0, 0, 0.55);
+    --shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.6), 0 10px 30px -10px rgba(0, 0, 0, 0.65);
+    --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.7);
+    --shadow-lg: 0 12px 36px -10px rgba(0, 0, 0, 0.8);
 
-    /* barely-there warm grid + a clean gold hairline ring (no glow) */
-    --grid-line: oklch(0.85 0.004 250 / 0.025);
-    --ring-soft: oklch(0.75 0.055 244 / 0.28);
+    /* faint sky grid + a soft mint focus ring */
+    --grid-line: rgba(127, 200, 255, 0.03);
+    --ring-soft: rgba(122, 240, 168, 0.22);
     --glow: none;
 
     /* ── code / syntax highlighting — deep well, luminous tokens ── */
-    --code-bg: oklch(0.145 0.006 256); /* near-black code well */
-    --code-fg: oklch(0.87 0.012 250);
-    --code-line: oklch(0.78 0.02 250);
-    --code-kw: oklch(0.72 0.14 305); /* violet */
-    --code-str: oklch(0.85 0.14 152); /* green */
-    --code-num: oklch(0.86 0.13 90); /* amber */
-    --code-com: oklch(0.55 0.01 260); /* grey */
-    --code-loc: oklch(0.76 0.11 250); /* blue */
-    --code-func: oklch(0.76 0.11 70); /* bronze */
+    --code-bg: #0e1520;
+    --code-fg: #e6eef7;
+    --code-line: #b9c7d6;
+    --code-kw: #c49cff; /* violet */
+    --code-str: #7af0a8; /* mint */
+    --code-num: #ffd166; /* amber */
+    --code-com: #5f7189; /* grey */
+    --code-loc: #7fc8ff; /* sky */
+    --code-func: #f2b880; /* bronze */
 
     /* ── categorical palette (module dots, future charts) ── */
-    --cat-1: oklch(0.72 0.13 250);
-    --cat-2: oklch(0.72 0.09 190);
-    --cat-3: oklch(0.72 0.12 305);
-    --cat-4: oklch(0.78 0.12 75);
+    --cat-1: #7fc8ff;
+    --cat-2: #7af0a8;
+    --cat-3: #c49cff;
+    --cat-4: #ffd166;
 
     /* ── terminal (live ANSI console) — dark in both themes ── */
-    --term-bg: oklch(0.145 0.006 256);
-    --term-fg: oklch(0.87 0.012 250);
-    --term-dim: oklch(0.5 0.01 256);
+    --term-bg: #06090f;
+    --term-fg: #e6eef7;
+    --term-dim: #5f7189;
 }
 
 *,
@@ -158,6 +157,7 @@ body.science.dark {
 }
 
 body.science {
+    color-scheme: light;
     margin: 0;
     color: var(--fg);
     font: 14px/1.65 var(--sans);
