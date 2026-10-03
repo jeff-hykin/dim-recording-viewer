@@ -1081,3 +1081,20 @@ button.dim-badge:hover {
         transform: translateY(8px);
     }
 }
+
+/* filled status badges (e.g. ARMED); later in the file than .dim-badge.danger so they win */
+.dim-badge.solid.danger {
+    color: var(--danger-fg);
+    background: var(--danger);
+    border-color: var(--danger);
+}
+.dim-badge.solid.ok {
+    color: var(--primary-fg);
+    background: var(--ok);
+    border-color: var(--ok);
+}
+.dim-badge.solid.warn {
+    color: var(--primary-fg);
+    background: var(--warn);
+    border-color: var(--warn);
+}

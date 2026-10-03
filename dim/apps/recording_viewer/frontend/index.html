@@ -2075,7 +2075,7 @@ function refreshStreams() {
     // accumulation; odom: just accumulation). Other kinds show a plain kind tag.
     let control
     if (entry.kind === "cloud") {
-      const aggBtn = name.split("#")[0].endsWith("_aggregated") ? "" : `<button class="agg-btn dim-btn ghost icon" data-agg="${encodeURIComponent(name)}" title="More">${dimIcon("menu")}</button>`
+      const aggBtn = name.split("#")[0].endsWith("_aggregated") ? "" : `<button class="agg-btn dim-btn ghost icon" data-agg="${encodeURIComponent(name)}" title="More">${dimIcon("more-horizontal")}</button>`
       control = aggBtn +
         `<button class="cust-btn" data-cust="${encodeURIComponent(name)}">` +
         `<span class="cb-idle">${entry.voxel ? "voxels" : "lidar"}</span><span class="cb-hover">customize</span></button>`
