@@ -11,7 +11,7 @@
 // off disk exactly when the playhead reaches it — blobs never all sit in memory
 // and never cross the app bus.
 
-import { DimAppBackend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.5.0/backend.js"
+import { DimAppBackend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.6.0/backend.js"
 import { DatabaseSync } from "node:sqlite"
 import { decode } from "jsr:@dimos/msgs@0.1.4"
 import lz4 from "https://esm.sh/lz4js@0.2.0"
