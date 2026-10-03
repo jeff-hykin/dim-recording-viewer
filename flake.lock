@@ -1,21 +1,5 @@
 {
   "nodes": {
-    "dim-app": {
-      "locked": {
-        "lastModified": 1791013314,
-        "narHash": "sha256-g72hwr36l6CIb3C8fc2N7UHDwKnbJ9dbehGEkSub1W4=",
-        "owner": "jeff-hykin",
-        "repo": "dim-app",
-        "rev": "f379dce2086df5251a8751050578c5449b4e45a1",
-        "type": "github"
-      },
-      "original": {
-        "owner": "jeff-hykin",
-        "ref": "v0.6.1",
-        "repo": "dim-app",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1767313136,
@@ -34,7 +18,6 @@
     },
     "root": {
       "inputs": {
-        "dim-app": "dim-app",
         "nixpkgs": "nixpkgs"
       }
     }

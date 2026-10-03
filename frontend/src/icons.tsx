@@ -1,13 +1,12 @@
 // dimOS shared line icons (24-unit grid, stroke = currentColor), seeded from Live Viewer's icons.tsx.
-// Plain pages: <i data-dim-icon="close"></i> is replaced by the SVG on load (and when added later).
-// Code: dimIcon("close") returns the SVG markup; DIM_ICON_PATHS has the raw path data.
-export const DIM_ICON_PATHS = {
+export const DIM_ICON_PATHS: Record<string, string> = {
     layers: "M12 3 3 8l9 5 9-5-9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5",
     camera: "M4 7h3l2-2h6l2 2h3v12H4V7Zm8 3.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z",
     drive: "M12 3v4m0 10v4M3 12h4m10 0h4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z",
     record: "M12 6a6 6 0 1 0 0 12 6 6 0 0 0 0-12Z",
     tree: "M6 4v16M6 8h6m-6 8h6m6-12v4h-6m6 4v4h-6",
-    settings: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm7.4 3a7.4 7.4 0 0 0-.1-1.3l2-1.5-2-3.4-2.3 1a7.3 7.3 0 0 0-2.2-1.3L14.5 2h-5l-.3 2.5A7.3 7.3 0 0 0 7 5.8l-2.3-1-2 3.4 2 1.5a7.4 7.4 0 0 0 0 2.6l-2 1.5 2 3.4 2.3-1a7.3 7.3 0 0 0 2.2 1.3l.3 2.5h5l.3-2.5a7.3 7.3 0 0 0 2.2-1.3l2.3 1 2-3.4-2-1.5c.1-.4.1-.9.1-1.3Z",
+    settings:
+        "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm7.4 3a7.4 7.4 0 0 0-.1-1.3l2-1.5-2-3.4-2.3 1a7.3 7.3 0 0 0-2.2-1.3L14.5 2h-5l-.3 2.5A7.3 7.3 0 0 0 7 5.8l-2.3-1-2 3.4 2 1.5a7.4 7.4 0 0 0 0 2.6l-2 1.5 2 3.4 2.3-1a7.3 7.3 0 0 0 2.2 1.3l.3 2.5h5l.3-2.5a7.3 7.3 0 0 0 2.2-1.3l2.3 1 2-3.4-2-1.5c.1-.4.1-.9.1-1.3Z",
     fullscreen: "M4 9V4h5M20 9V4h-5M4 15v5h5m11-5v5h-5",
     "fullscreen-exit": "M9 4v5H4M15 4v5h5M9 20v-5H4m11 5v-5h5",
     close: "M6 6l12 12M18 6 6 18",
@@ -50,7 +49,8 @@ export const DIM_ICON_PATHS = {
     link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
     power: "M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0",
     keyboard: "M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10",
-    gamepad: "M6 8h12a4 4 0 0 1 4 4v2a3 3 0 0 1-5.4 1.8L15 14H9l-1.6 1.8A3 3 0 0 1 2 14v-2a4 4 0 0 1 4-4Zm2 2v4m-2-2h4m6-1h.01M17 13h.01",
+    gamepad:
+        "M6 8h12a4 4 0 0 1 4 4v2a3 3 0 0 1-5.4 1.8L15 14H9l-1.6 1.8A3 3 0 0 1 2 14v-2a4 4 0 0 1 4-4Zm2 2v4m-2-2h4m6-1h.01M17 13h.01",
     robot: "M12 3v3M6 8h12v10H6zM9 12h.01M15 12h.01M9 15h6M3 12v3M21 12v3",
     pin: "M9 4h6l-1 5 3 3v2H7v-2l3-3-1-5Zm3 10v7",
     edit: "M4 20h4L19 9l-4-4L4 16v4Zm9-13 4 4",
@@ -66,29 +66,17 @@ export const DIM_ICON_PATHS = {
     map: "M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Zm0 0v14m6-12v14",
 }
 
-export function dimIcon(name, size = 18) {
-    const d = DIM_ICON_PATHS[name] ?? ""
-    return `<svg class="dim-icon" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`
+/** The icon as SVG markup, for DOM built outside React. */
+export function dimIcon(name: string, size = 18): string {
+    return `<svg class="dim-icon" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path d="${
+        DIM_ICON_PATHS[name] ?? ""
+    }"/></svg>`
 }
 
-function upgrade(root) {
-    for (const element of root.querySelectorAll("[data-dim-icon]")) {
-        if (element.dataset.dimIconDone) {
-            continue
-        }
-        element.dataset.dimIconDone = "1"
-        element.innerHTML = dimIcon(element.dataset.dimIcon, element.dataset.dimIconSize || 18)
-    }
-}
-
-if (typeof document !== "undefined") {
-    const start = () => {
-        upgrade(document)
-        new MutationObserver(() => upgrade(document)).observe(document.body, { childList: true, subtree: true })
-    }
-    if (document.body) {
-        start()
-    } else {
-        document.addEventListener("DOMContentLoaded", start)
-    }
+export function Icon({ name, size = 18 }: { name: string; size?: number }) {
+    return (
+        <svg className="dim-icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+            <path d={DIM_ICON_PATHS[name] ?? ""} />
+        </svg>
+    )
 }

@@ -1,75 +1,42 @@
-# dim-recording-viewer
+# Mapper (dim-recording-viewer)
 
-A [dimOS Desktop](https://github.com/dimensionalOS/dimos-desktop) app that renders a
-**recorded** DimOS stack in 3D. Drop (or browse to) a dimos "memory2" `.db` / `.mcap`
-recording and it plays back as a live 3D scene — the same way
-[dim-live-viewer](https://github.com/jeff-hykin/dim-live-viewer) shows a *running*
-stack, but sourced from a file on disk instead of the bridge.
+A [dimOS Desktop](https://github.com/dimensionalOS/dimos-desktop) app that opens **recorded** DimOS stacks and builds
+lidar maps from them. Open a dimos memory2 `.db`, an `.mcap` or a `.pc2.lcm` map and it plays back in 3D:
 
-- **Robot / pose** — body + pose gizmo + odometry trail (`Odometry`, `PoseStamped`).
-- **Point clouds** — lidar / costmap, TF-placed and height-gradient colored (`PointCloud2`).
-- **Planned paths** (`Path`) and the **camera PIP** (`Image` / `CompressedImage`).
-- **TF tree** — every cloud/pose is transformed into a common world frame.
-- **Scrubbable timeline** at the bottom: play / pause, speed, and seek anywhere.
+- **Robot / pose**: body + pose gizmo + odometry trail (`Odometry`, `PoseStamped`).
+- **Point clouds**: placed through the tf tree, as points or voxels, gradient-colored, with accumulation and filters.
+- **Planned paths** (`Path`) and **camera windows** (`Image` / `CompressedImage`, depth colorized).
+- **Timeline**: play / pause, speed, seek. A tf report warns about streams that can't be placed.
+- **Map building**: every scan of a cloud stream placed in the world and voxel-deduplicated (optionally column-carved
+  and de-speckled), saved into the recording as `<stream>_aggregated`, exportable as a `.pc2.lcm`.
 
-Streams are discovered from the recording's `_streams` table and drawn by
-**duck-typing the decoded message** — there is no hardcoded topic list.
-
-An `.mcap` opens the same way. It holds the same messages CDR-encoded against
-ros2msg schemas in compressed chunks, and its summary section indexes every message
-by (chunk, byte offset) — so the timeline is built from the index alone and payloads
-are decompressed and decoded one at a time, exactly like the `.db` path. Aggregation
-is the one thing it can't do: the Rust mapper reads and writes memory2 streams.
-
-A `.pc2.lcm` file (one bare LCM-encoded `PointCloud2` — an aggregated global map or
-relocalization premap) opens the same way. It has no timeline, so it loads as a
-single static cloud with the transport bar parked at zero.
-
-## Install
-
-### dimOS Desktop
+Every action is an HTTP endpoint (`backend/routes.ts`, listed in `dimos.yaml` under `agent:` and served as
+`agent.json`), so Desktop's agent can drive it like the page does: `GET api/recordings`, `POST api/open`,
+`POST api/seek`, `POST api/map/build`, `GET api/view` (the 3D view as an image), and so on.
 
 ```sh
-dimos-desktop install https://github.com/jeff-hykin/dim-recording-viewer --ref dimos-desktop2
+dimos-desktop install https://github.com/jeff-hykin/dim-recording-viewer
 ```
 
-Desktop builds it with `nix build .#dimosApp`, which wraps the backend as a `dimos-app-server`; aggregation runs the
-Rust mapper shipped in `mapper/bin` for your platform.
+## Layout
 
-### Old dashboard
+- `backend/` (Deno): `routes.ts` (the endpoints), `playback.ts` (one recording at a time: builds a time-sorted
+  timeline from the small `(id, ts)` columns / the mcap message index, decodes a blob only when the playhead reaches
+  it, so a 30 GB recording never loads into memory), `decode.ts` (messages → frames), `scene.ts` (the 3D frames on
+  `api/scene/ws`), `files.ts` (Desktop's `GET /recordings`, `~/datasets`, recents, folder browsing), `mapper.ts`.
+- `mapper/` (Rust): the map builder (SQLite, the dimos LCM codec, world transform, voxel dedup, carving, outlier
+  removal). The heavy part, so it's native; the backend runs it as a subprocess and forwards its progress.
+- `frontend/` (TypeScript + Vite + React, three.js): `viewer.ts` is the scene, `App.tsx` the page around it.
+
+`nix build .#dimosApp` builds all three into `bin/dimos-app-server` (`.#mapper`, `.#frontend`, `.#backendModules`
+separately).
+
+## Develop
 
 ```sh
-dim install https://github.com/jeff-hykin/dim-recording-viewer
+npm ci && (cd frontend && npm ci && npm run build)   # the backend's decoders; the page
+nix build .#mapper -o result-mapper                  # the map builder the backend finds there
+deno task dev                                        # http://localhost:8787
+deno task test && deno task check                    # tests; types + dimos.yaml matches the routes
+deno task check-endpoints --write                    # after changing routes.ts
 ```
-
-Open **Mapper** from the desktop rail, then drop a `.db` / `.mcap` / `.pc2.lcm` file or click
-**Browse**.
-
-## How it works
-
-- `dim/apps/recording_viewer/main.js` — the backend half (runs in the Deno
-  desktop). It opens the `.db` with `@db/sqlite`, scans only the small `(id, ts)`
-  columns of every stream into typed arrays to build one merged, time-sorted
-  timeline, then decodes each message with [`@dimos/msgs`](https://jsr.io/@dimos/msgs)
-  **on demand** as the playhead reaches it. Message blobs live in separate
-  `<stream>_blob` tables and are read straight off disk one at a time, so a
-  30GB+ recording never loads into memory and never crosses the app bus.
-- `dim/apps/recording_viewer/frontend/index.html` — the UI: a
-  [three.js](https://threejs.org) scene (ROS Z-up) built from the forwarded
-  frames, plus a transport bar that sends `play` / `pause` / `seek` / `speed`
-  back to the backend.
-
-### Loading a recording
-
-Dropped files have their path stripped by the webview, and recordings are far
-too large to send over the app bus, so:
-
-- **Drag-drop** hands the backend the file *name*, which it resolves against the
-  known recording folders (`~/datasets`, `~/datasets/go2_recordings`, …).
-- **Browse** opens an in-page file browser that walks directories via the
-  backend's `listDir` message. It replaces a native dialog, which surfaced
-  unreliably from the desktop's background service and needed a different
-  picker binary per platform. An `<input type="file">` can't be used — the
-  browser hands back bytes, never a path.
-
-Either way the backend only ever holds a filesystem path; the bytes stay on disk.

@@ -1,3 +1,244 @@
-# A dimOS Desktop app. Format: https://github.com/dimensionalOS/dimos-desktop/blob/jeff/rust_desktop/docs/apps.md
 title: Mapper
 dimos-desktop-api: ">=2 <3"
+dimos-api:
+    - GET /recordings
+caches:
+    - url: "https://dimos-desktop.cachix.org"
+      key: "dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ="
+agent:
+    description: >-
+        Mapper: opens dimos recordings (.db, .mcap, .pc2.lcm) and plays them back in 3D (clouds placed by tf, robot pose +
+        trail, paths, camera images), and builds lidar maps from them (voxel-deduplicated, optional column carving and
+        outlier removal) that it saves into the recording or exports as .pc2.lcm
+    endpoints:
+        - method: GET
+          path: api/state
+          description: >-
+              What Mapper shows: the open recording (path, streams with type/kind/rows, time range), the playhead (t, offset
+              from the start, playing, speed), the map build status, markers and the z slice
+          role: context
+        - method: GET
+          path: api/view
+          description: >-
+              What the user sees: the 3D view rendered as an image, with the camera pose and the playhead (needs a Mapper page
+              open)
+          role: view
+        - method: GET
+          path: api/recordings
+          description: >-
+              Recordings Mapper can open: Desktop's shared recordings folder (GET /recordings), the dataset folders it scans
+              (~/datasets) and the recently opened ones. Each has a path to pass to POST api/open
+        - method: GET
+          path: api/files
+          description: "Browse a folder for recordings: its subfolders and its .db / .mcap / .pc2.lcm files (what the Open dialog shows)"
+          params:
+              dir:
+                  type: string
+                  description: folder path; ~ is home (default home)
+        - method: POST
+          path: api/open
+          description: "Open a recording (.db, .mcap, .pc2.lcm) and show it paused at its opening frame; replaces the open one"
+          params:
+              path:
+                  type: string
+                  required: true
+                  description: "absolute path, a Desktop recording id, or a file name in a known folder"
+        - method: POST
+          path: api/close
+          description: Close the open recording
+        - method: GET
+          path: api/tf-report
+          description: >-
+              The open recording's transform tree and which streams can't be placed in the world (no tf, ambiguous parents,
+              disconnected) or can't be decoded
+        - method: POST
+          path: api/play
+          description: Play from the playhead (from the start if it's at the end)
+        - method: POST
+          path: api/pause
+          description: Pause playback
+        - method: POST
+          path: api/seek
+          description: "Move the playhead; give one of t, offset or fraction. The scene rebuilds as it was at that moment"
+          params:
+              t:
+                  type: number
+                  description: 'absolute time (seconds since the epoch, as in state''s t0..t1)'
+              offset:
+                  type: number
+                  description: seconds from the start of the recording
+              fraction:
+                  type: number
+                  description: "0 = start, 1 = end"
+        - method: POST
+          path: api/speed
+          description: Set the playback speed
+          params:
+              speed:
+                  type: number
+                  required: true
+                  description: "multiplier, e.g. 0.25, 1, 4, 16"
+        - method: GET
+          path: api/styles
+          description: 'Each stream''s display settings (visibility, accumulation, colors, voxels, filters), by stream name'
+        - method: POST
+          path: api/style
+          description: >-
+              Change how a stream is drawn; only the fields given change, null resets one. on: show/hide. accum: 'latest' |
+              'all' | seconds (how many scans/poses stay on screen). Clouds: gradStart/gradMid/gradEnd ('#rrggbb'), axis (0 x,
+              1 y, 2 z: what the gradient follows), voxel (draw as cubes), voxelSize (m), downsample (keep every Nth point),
+              rangeMax (m from the sensor, 0 = off), zMin/zMax (m), denoise, denoiseCell (m), denoiseMin (points)
+          params:
+              stream:
+                  type: string
+                  required: true
+              "on":
+                  type: boolean
+              accum:
+                  type: string
+              gradStart:
+                  type: string
+              gradMid:
+                  type: string
+              gradEnd:
+                  type: string
+              axis:
+                  type: number
+              voxel:
+                  type: boolean
+              voxelSize:
+                  type: number
+              downsample:
+                  type: number
+              rangeMax:
+                  type: number
+              zMin:
+                  type: number
+              zMax:
+                  type: number
+              denoise:
+                  type: boolean
+              denoiseCell:
+                  type: number
+              denoiseMin:
+                  type: number
+        - method: POST
+          path: api/camera
+          description: >-
+              Move the 3D camera: preset 'fit' (frame the whole scene), 'top' (bird's-eye floor plan), or position + target in
+              world meters
+          params:
+              preset:
+                  type: string
+                  description: fit | top
+              position:
+                  type: array
+                  items:
+                      type: number
+                  description: "[x, y, z] camera position (m)"
+              target:
+                  type: array
+                  items:
+                      type: number
+                  description: "[x, y, z] point to look at (m)"
+        - method: GET
+          path: api/markers
+          description: The floor markers (pins) placed in the 3D view
+        - method: POST
+          path: api/markers
+          description: "Pin a marker on the floor at x, y (world meters)"
+          params:
+              x:
+                  type: number
+                  required: true
+              "y":
+                  type: number
+                  required: true
+              label:
+                  type: string
+        - method: PUT
+          path: "api/markers/{id}"
+          description: Move a marker
+          params:
+              id:
+                  type: string
+                  required: true
+              x:
+                  type: number
+                  required: true
+              "y":
+                  type: number
+                  required: true
+        - method: DELETE
+          path: "api/markers/{id}"
+          description: Remove a marker
+          params:
+              id:
+                  type: string
+                  required: true
+        - method: DELETE
+          path: api/markers
+          description: Remove every marker
+        - method: POST
+          path: api/slice
+          description: "Clip the 3D view to a height band (cut away a roof or the floor): zMin / zMax in world meters, null = open"
+          params:
+              zMin:
+                  type: number
+              zMax:
+                  type: number
+        - method: GET
+          path: api/map/status
+          description: >-
+              The map build: the running one (stream, phase, progress), the last result (aggregated stream, points, seconds)
+              or error
+        - method: POST
+          path: api/map/build
+          description: >-
+              Build (or rebuild) a lidar map from a cloud stream of the open .db recording: every scan placed in the world and
+              voxel-deduplicated, then optionally cleaned. Saved into the recording as '<stream>_aggregated', which then
+              appears as a stream. Progress: GET api/map/status or the 'map' events. wait=true answers when it's done
+          params:
+              stream:
+                  type: string
+                  required: true
+                  description: the source point-cloud stream (e.g. lidar)
+              voxel:
+                  type: number
+                  description: voxel edge in meters (default 0.05)
+              carve:
+                  type: boolean
+                  description: "column carving: drop floaters and everything above carveHeight (default true)"
+              carveHeight:
+                  type: number
+                  description: meters above each column's floor to keep (default 2.13; 0 = no height cut)
+              carveGap:
+                  type: number
+                  description: vertical gap (m) that marks a floater (default 0.5)
+              outlier:
+                  type: boolean
+                  description: drop isolated speckle points (default true)
+              outlierMin:
+                  type: number
+                  description: occupied neighbors (3x3x3) a voxel needs to stay (default 3)
+              wait:
+                  type: boolean
+                  description: "answer when the build finishes (default false: answer at once)"
+        - method: POST
+          path: api/map/cancel
+          description: Stop the running map build (the recording is left as it was)
+        - method: POST
+          path: api/map/export
+          description: >-
+              Save a built map as a .pc2.lcm file (one LCM PointCloud2, what dimos loads as a global map / relocalization
+              premap). Default: next to the recording, named <recording>.<stream>.pc2.lcm
+          params:
+              stream:
+                  type: string
+                  description: 'the map stream (default: the open recording''s *_aggregated stream)'
+              path:
+                  type: string
+                  description: where to write (.pc2.lcm)
+              overwrite:
+                  type: boolean
+                  description: replace an existing file (default false)

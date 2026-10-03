@@ -1,1 +1,4 @@
-result
+result*
+node_modules/
+frontend/dist/
+mapper/target/
