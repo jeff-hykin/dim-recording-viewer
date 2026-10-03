@@ -284,7 +284,7 @@ body.science {
 }
 .dim-btn:hover {
     background: var(--accent);
-    border-color: color-mix(in oklch, var(--border) 60%, var(--primary));
+    border-color: color-mix(in oklab, var(--border) 60%, var(--primary));
 }
 .dim-btn:active {
     transform: translateY(0.5px);
@@ -319,7 +319,7 @@ body.science {
     border-color: var(--info);
 }
 .dim-btn.accent:hover {
-    background: color-mix(in oklch, var(--info) 88%, black);
+    background: color-mix(in oklab, var(--info) 88%, black);
 }
 
 .dim-btn.ghost {
@@ -338,7 +338,7 @@ body.science {
     border-color: var(--danger);
 }
 .dim-btn.danger:hover {
-    background: color-mix(in oklch, var(--danger) 88%, black);
+    background: color-mix(in oklab, var(--danger) 88%, black);
 }
 
 .dim-btn.sm {
@@ -373,24 +373,24 @@ body.science {
     border-color: var(--primary);
 }
 .dim-badge.info {
-    color: color-mix(in oklch, var(--info) 72%, var(--fg));
+    color: color-mix(in oklab, var(--info) 72%, var(--fg));
     border-color: color-mix(in srgb, var(--info) 38%, transparent);
-    background: color-mix(in oklch, var(--info) 14%, var(--card));
+    background: color-mix(in oklab, var(--info) 14%, var(--card));
 }
 .dim-badge.ok {
-    color: color-mix(in oklch, var(--ok) 82%, var(--fg));
+    color: color-mix(in oklab, var(--ok) 82%, var(--fg));
     border-color: color-mix(in srgb, var(--ok) 50%, transparent);
-    background: color-mix(in oklch, var(--ok) 28%, var(--card));
+    background: color-mix(in oklab, var(--ok) 28%, var(--card));
 }
 .dim-badge.warn {
-    color: color-mix(in oklch, var(--warn) 74%, var(--fg));
+    color: color-mix(in oklab, var(--warn) 74%, var(--fg));
     border-color: color-mix(in srgb, var(--warn) 52%, transparent);
-    background: color-mix(in oklch, var(--warn) 32%, var(--card));
+    background: color-mix(in oklab, var(--warn) 32%, var(--card));
 }
 .dim-badge.danger {
-    color: color-mix(in oklch, var(--danger) 80%, var(--fg));
+    color: color-mix(in oklab, var(--danger) 80%, var(--fg));
     border-color: color-mix(in srgb, var(--danger) 38%, transparent);
-    background: color-mix(in oklch, var(--danger) 12%, var(--card));
+    background: color-mix(in oklab, var(--danger) 12%, var(--card));
 }
 .dim-badge .dot {
     width: 7px;
@@ -734,17 +734,17 @@ body.science {
 }
 .dim-alert.info {
     border-color: color-mix(in srgb, var(--info) 35%, transparent);
-    background: color-mix(in oklch, var(--info) 8%, var(--card));
+    background: color-mix(in oklab, var(--info) 8%, var(--card));
     border-left-color: var(--info);
 }
 .dim-alert.danger {
     border-color: color-mix(in srgb, var(--danger) 35%, transparent);
-    background: color-mix(in oklch, var(--danger) 8%, var(--card));
+    background: color-mix(in oklab, var(--danger) 8%, var(--card));
     border-left-color: var(--danger);
 }
 .dim-alert.warn {
     border-color: color-mix(in srgb, var(--warn) 38%, transparent);
-    background: color-mix(in oklch, var(--warn) 12%, var(--card));
+    background: color-mix(in oklab, var(--warn) 12%, var(--card));
     border-left-color: var(--warn);
 }
 .dim-alert .dim-alert-title {
@@ -806,11 +806,11 @@ body.science {
 .dim-bars .bar {
     flex: 1;
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-    background: color-mix(in oklch, var(--primary) 24%, var(--muted));
+    background: color-mix(in oklab, var(--primary) 24%, var(--muted));
     transition: background 0.14s ease;
 }
 .dim-bars .bar:hover {
-    background: color-mix(in oklch, var(--primary) 48%, var(--muted));
+    background: color-mix(in oklab, var(--primary) 48%, var(--muted));
 }
 .dim-bars .bar.hot {
     background: var(--primary);
@@ -905,7 +905,7 @@ body.science {
     cursor: default;
 }
 .dim-cal-grid .day.range {
-    background: color-mix(in oklch, var(--primary) 14%, var(--card));
+    background: color-mix(in oklab, var(--primary) 14%, var(--card));
 }
 .dim-cal-grid .day.sel {
     background: var(--primary);
@@ -1018,7 +1018,7 @@ button.dim-badge {
     font-family: var(--sans);
 }
 button.dim-badge:hover {
-    border-color: color-mix(in oklch, var(--border) 50%, var(--primary));
+    border-color: color-mix(in oklab, var(--border) 50%, var(--primary));
 }
 
 /* frosted panel floating over a 3D/video view */
@@ -1073,7 +1073,7 @@ button.dim-badge:hover {
 }
 .dim-toast.danger {
     border-color: color-mix(in srgb, var(--danger) 55%, transparent);
-    color: color-mix(in oklch, var(--danger) 70%, var(--fg));
+    color: color-mix(in oklab, var(--danger) 70%, var(--fg));
 }
 @keyframes dim-toast-in {
     from {
