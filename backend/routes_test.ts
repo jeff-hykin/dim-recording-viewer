@@ -234,7 +234,7 @@ Deno.test("build a map, export it, open the export", async () => {
     assertEquals((await call("GET", "api/map/status")).json.running, null)
 
     // a running build can be cancelled (a stand-in mapper that takes its time)
-    await Deno.writeTextFile(`${dir}/slow-mapper`, "#!/bin/sh\nsleep 30\n")
+    await Deno.writeTextFile(`${dir}/slow-mapper`, "#!/bin/sh\nexec sleep 30\n")
     await Deno.chmod(`${dir}/slow-mapper`, 0o755)
     Deno.env.set("MAPPER_BIN", `${dir}/slow-mapper`)
     const started = await call("POST", "api/map/build", { stream: "lidar" })
@@ -275,6 +275,9 @@ Deno.test("view: asks the open page for its picture", async () => {
     const view = await call("GET", "api/view")
     assertEquals(view.json.view, { mimeType: "image/png", data: "AAAA" })
     assertEquals(view.json.type, undefined)
+    const closed = new Promise((resolve) => page.onclose = resolve)
     page.close()
+    await closed
+    await new Promise((resolve) => setTimeout(resolve, 100)) // the server side of the socket closes too
     await server.shutdown()
 })

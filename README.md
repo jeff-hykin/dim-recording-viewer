@@ -20,10 +20,10 @@ dimos-desktop install https://github.com/jeff-hykin/dim-recording-viewer
 
 ## Layout
 
-- `backend/` (Deno): `routes.ts` (the endpoints), `playback.ts` (one recording at a time: builds a time-sorted
-  timeline from the small `(id, ts)` columns / the mcap message index, decodes a blob only when the playhead reaches
-  it, so a 30 GB recording never loads into memory), `decode.ts` (messages → frames), `scene.ts` (the 3D frames on
-  `api/scene/ws`), `files.ts` (Desktop's `GET /recordings`, `~/datasets`, recents, folder browsing), `mapper.ts`.
+- `backend/` (Deno): `routes.ts` (the endpoints), `playback.ts` (one recording at a time: builds a time-sorted timeline
+  from the small `(id, ts)` columns / the mcap message index, decodes a blob only when the playhead reaches it, so a 30
+  GB recording never loads into memory), `decode.ts` (messages → frames), `scene.ts` (the 3D frames on `api/scene/ws`),
+  `files.ts` (Desktop's `GET /recordings`, `~/datasets`, recents, folder browsing), `mapper.ts`.
 - `mapper/` (Rust): the map builder (SQLite, the dimos LCM codec, world transform, voxel dedup, carving, outlier
   removal). The heavy part, so it's native; the backend runs it as a subprocess and forwards its progress.
 - `frontend/` (TypeScript + Vite + React, three.js): `viewer.ts` is the scene, `App.tsx` the page around it.
