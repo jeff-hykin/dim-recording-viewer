@@ -2,7 +2,7 @@
     description = "dim-recording-viewer (Mapper): plays back dimos recordings in 3D, as a dimOS Desktop app";
 
     inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
-    inputs.dim-app.url = "github:jeff-hykin/dim-app/v0.6.0";
+    inputs.dim-app.url = "github:jeff-hykin/dim-app/v0.6.1";
 
     outputs = { self, nixpkgs, dim-app }: {
         # the Rust mapper runs from the binaries shipped in mapper/bin, one per platform
