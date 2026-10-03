@@ -1,7 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-linejoin="round" stroke-linecap="round">
-  <!-- Self-contrasting shaded cube: bright top + mid/dark side faces read on both
-       light and dark backgrounds without relying on currentColor. -->
-  <polygon points="12,2.6 20.7,7.7 12,12.8 3.3,7.7" fill="#7fe3ff" stroke="#1c5f8f" stroke-width="0.7"/>
-  <polygon points="3.3,7.7 12,12.8 12,21.4 3.3,16.3" fill="#2f9bd6" stroke="#1c5f8f" stroke-width="0.7"/>
-  <polygon points="20.7,7.7 12,12.8 12,21.4 20.7,16.3" fill="#1f6ca6" stroke="#1c5f8f" stroke-width="0.7"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" color="#00a697" role="img" aria-label="Mapper">
+  <!-- dimOS app icon set: 24 grid, 2px round strokes, one hue per app at equal lightness, 24% tint for the duotone fill -->
+  <path d="M9 4l6 2.5V20l-6-2.5z" fill="currentColor" fill-opacity=".24" stroke="none"/>
+  <path d="M3 6.5L9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20z"/>
+  <path d="M9 4v13.5M15 6.5V20"/>
 </svg>
