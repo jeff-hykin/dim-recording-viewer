@@ -19,6 +19,9 @@ jobs:
                   name: dimos-desktop
                   authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
             - run: nix build .#dimosApp -L
+            # the Linux cross builds dimos.yaml's `nix:` points robots at (built on the Mac runner: the attribute is under aarch64-darwin)
+            - if: runner.os == 'macOS'
+              run: nix build .#dimosApp-aarch64-linux .#dimosApp-x86_64-linux -L
             # the map-build tests run the real mapper
             - run: nix build .#mapper -o result-mapper
             - uses: denoland/setup-deno@v2
