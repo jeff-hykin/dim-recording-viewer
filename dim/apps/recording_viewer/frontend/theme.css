@@ -945,3 +945,139 @@ body.science {
     background: color-mix(in srgb, var(--muted-fg) 70%, transparent);
     background-clip: padding-box;
 }
+
+/* ───────────────────────── additions (component unification, 2026-10) ─────────────────────────
+   Appended to every app's copy of theme.css; merge into the Desktop shell's ui/src/assets/theme.css.
+
+   Light/dark: the shell stores the choice in localStorage "dimos.themeChoice" ("light" | "dark", missing = dark)
+   and toggles body.science.dark on its own page. Apps are same-origin iframes (/apps/<pkg>/), so each app runs
+   dim-theme.js, which reads that key and listens for the `storage` event (fired in every other same-origin
+   document, iframes included, when the shell writes it). No postMessage needed.
+*/
+
+/* axis colors (URDF Editor, viewers): tokens, not literals */
+:root {
+    --axis-x: oklch(0.6 0.19 25);
+    --axis-y: oklch(0.62 0.17 145);
+    --axis-z: oklch(0.58 0.16 255);
+}
+body.science.dark {
+    --axis-x: #ff6b6b;
+    --axis-y: #5be37a;
+    --axis-z: #5aa9ff;
+}
+
+/* pressed / selected state for toggle buttons */
+.dim-btn.on,
+.dim-btn[aria-pressed="true"] {
+    color: var(--primary);
+    background: var(--primary-soft);
+    border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+}
+.dim-btn.primary.on {
+    color: var(--primary-fg);
+    background: var(--primary-hover);
+}
+/* big hold-to-act buttons (arm, stop) */
+.dim-btn.lg {
+    padding: 14px 26px;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+/* circle icon button */
+.dim-btn.round {
+    border-radius: 999px;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.dim-btn.icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+/* tabs: class-based selection, and a vertical stack */
+.dim-tab.active,
+.dim-tab.on {
+    color: var(--fg);
+    background: var(--card);
+    box-shadow: var(--shadow-2xs);
+}
+.dim-tabs.vertical {
+    flex-direction: column;
+}
+
+/* badge that is also a button */
+button.dim-badge {
+    cursor: pointer;
+    font-family: var(--sans);
+}
+button.dim-badge:hover {
+    border-color: color-mix(in oklch, var(--border) 50%, var(--primary));
+}
+
+/* frosted panel floating over a 3D/video view */
+.dim-panel.glass {
+    background: color-mix(in srgb, var(--card) 80%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+/* line icons (dim-icons.js): size follows font-size, color follows text */
+.dim-icon {
+    width: 1.15em;
+    height: 1.15em;
+    flex: none;
+    vertical-align: -0.2em;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* toast: bottom-center stack, same look as the shell's */
+.dim-toasts {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+}
+.dim-toast {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: var(--fg);
+    box-shadow: var(--shadow-lg);
+    animation: dim-toast-in 0.2s ease;
+}
+.dim-toast.ok {
+    border-color: color-mix(in srgb, var(--ok) 50%, transparent);
+}
+.dim-toast.warn {
+    border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+}
+.dim-toast.danger {
+    border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+    color: color-mix(in oklch, var(--danger) 70%, var(--fg));
+}
+@keyframes dim-toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+}

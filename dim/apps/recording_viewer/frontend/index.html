@@ -10,7 +10,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="color-scheme" content="dark" />
+<meta name="color-scheme" content="light dark" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Mapper · DimOS</title>
 <link rel="stylesheet" href="theme.css" />
@@ -30,16 +30,6 @@
   .topbar .title { font-size: 14px; font-weight: 650; letter-spacing: 0.02em; color: var(--fg); }
   .topbar .sub { font-size: 11px; color: var(--muted-fg); letter-spacing: 0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
   .topbar .spacer { flex: 1; }
-  .btn { font: inherit; font-size: 12px; font-weight: 600; color: var(--fg); cursor: pointer;
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 12px; }
-  .btn:hover { background: var(--accent); }
-  .btn.primary { background: var(--primary); color: var(--primary-fg); border-color: transparent; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px;
-    color: var(--muted-fg); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
-    background: color-mix(in srgb, var(--card) 60%, transparent); }
-  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-fg); transition: background .3s; }
-  .pill.on { color: color-mix(in oklch, var(--info) 70%, var(--fg)); border-color: color-mix(in oklch, var(--info) 35%, var(--border)); }
-  .pill.on .dot { background: var(--info); box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 22%, transparent); }
 
   /* left column: Streams panel at the top, tf tree pinned to the bottom. A flex column
      (rather than two absolutely-placed boxes) keeps a long stream list from growing down
@@ -49,28 +39,23 @@
     pointer-events: none; }
   #left-stack > * { pointer-events: auto; }
   .panel { flex: 0 1 auto; min-height: 0; width: fit-content; min-width: 288px; max-width: min(560px, 46vw);
-    background: color-mix(in srgb, var(--card) 90%, transparent); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); box-shadow: var(--shadow-md); backdrop-filter: blur(10px);
     padding: 12px 12px 14px; font-size: 12px; overflow: auto; }
-  .panel h2 { margin: 0 0 6px; font-size: 9.5px; letter-spacing: var(--track-label); text-transform: uppercase;
-    color: var(--muted-fg); font-weight: 700; }
+  .panel h2 { margin: 0 0 6px; }
   .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .mini-btn { font: inherit; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-    color: var(--muted-fg); background: var(--accent); border: 1px solid var(--border); border-radius: var(--radius-sm);
-    padding: 2px 7px; margin: 0 0 6px; cursor: pointer; flex: none; white-space: nowrap; }
-  .mini-btn:hover { color: var(--fg); }
+  .mini-btn { padding: 3px 8px; margin: 0 0 6px; flex: none; white-space: nowrap; }
   .panel.collapsed #toggle-all { display: none; }
   .panel h2:not(:first-child) { margin-top: 15px; }
   .panel h2.toggle { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
-  .panel h2.toggle::before { content: "▾"; font-size: 8px; transition: transform 0.15s; }
+  .chev { display: inline-flex; font-size: 10px; transition: transform 0.15s; }
   .panel.collapsed { width: auto; min-width: 0; padding: 8px 12px; overflow: visible; }
   .panel.collapsed h2 { margin: 0; }
-  .panel.collapsed h2.toggle::before { transform: rotate(-90deg); }
+  .panel.collapsed h2.toggle .chev { transform: rotate(-90deg); }
   .panel.collapsed #stream-list { display: none; }
   .row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 3px 2px; border-radius: var(--radius-sm); }
   .row select.accum-pick { width: 64px; }
   .row:hover { background: var(--accent); }
-  .row label { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; min-width: 0; }
+  .row label { gap: 8px; flex: 1; min-width: 0; }
+  .row .dim-check .box { width: 15px; height: 15px; }
   .row .nm { font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .tag { display: inline-flex; align-items: center; gap: 5px; font-size: 8.5px; font-weight: 700;
     letter-spacing: 0.06em; text-transform: uppercase; color: var(--secondary-fg);
@@ -82,9 +67,7 @@
   .kc-image { --kc: oklch(0.68 0.15 300); }
   .kc-tf    { --kc: oklch(0.7 0.02 260); }
   .empty { color: var(--muted-fg); padding: 4px 2px; }
-  input[type=checkbox] { accent-color: var(--primary); }
-  select { width: 100%; appearance: none; font: inherit; font-size: 12px; color: var(--fg); cursor: pointer;
-    background: var(--card); border: 1px solid var(--input); border-radius: var(--radius); padding: 6px 9px; margin-top: 4px; }
+  .dim-select { font-size: 12px; padding: 5px 30px 5px 9px; background-position: right 14px center, right 9px center; }
   .row select.grad-pick { width: 78px; flex: none; font-size: 10px; padding: 2px 5px; margin: 0; }
   .row select.axis-pick { width: 38px; }
 
@@ -96,7 +79,7 @@
 
   /* start / drop overlay */
   .overlay { position: absolute; inset: 0; z-index: 8; display: flex; align-items: center; justify-content: center;
-    padding: 24px; background: color-mix(in srgb, var(--card) 30%, transparent); backdrop-filter: blur(2px); }
+    padding: 24px; background: color-mix(in srgb, var(--bg) 30%, transparent); backdrop-filter: blur(2px); }
   .overlay.hidden { display: none; }
   .drop { width: min(560px, 92%); max-height: 84%; overflow: auto; text-align: center;
     border: 2px dashed var(--border); border-radius: var(--radius-lg); padding: 34px 28px 26px;
@@ -105,20 +88,16 @@
   .drop h1 { margin: 0 0 4px; font-size: 18px; color: var(--fg); }
   .drop p { margin: 0 0 18px; font-size: 12.5px; color: var(--muted-fg); }
   .drop .reclist { text-align: left; margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
-  .drop .reclist h2 { margin: 0 0 8px; font-size: 9.5px; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--muted-fg); font-weight: 700; }
+  .drop .reclist h2 { margin: 0 0 8px; }
 
   /* bottom transport / timeline */
   .transport { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 6;
-    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
-    border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
-    background: color-mix(in srgb, var(--card) 90%, transparent); backdrop-filter: blur(10px); }
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
   .transport.hidden { display: none; }
-  .transport .playbtn { width: 34px; height: 34px; flex: none; border-radius: 50%; border: 1px solid var(--border);
-    background: var(--card); color: var(--fg); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; }
-  .transport .playbtn:hover { background: var(--accent); }
+  .transport .playbtn { width: 34px; height: 34px; flex: none; font-size: 15px; }
   .transport .clock { font-family: var(--mono); font-size: 11.5px; color: var(--muted-fg); flex: none; min-width: 96px; text-align: center; }
-  .transport input[type=range] { flex: 1; accent-color: var(--primary); height: 4px; cursor: pointer; }
-  .transport select { width: auto; margin: 0; padding: 4px 8px; font-size: 11px; }
+  .transport .dim-range { flex: 1; }
+  .transport .dim-select { width: auto; font-size: 11px; padding: 4px 28px 4px 8px; }
 
   #help { position: absolute; bottom: 68px; left: 16px; z-index: 4; color: var(--muted-fg); opacity: 0.6;
     font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; user-select: none; }
@@ -127,45 +106,29 @@
      events, so dragging empty space still orbits the 3D scene. */
   #cam-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
   .cam-win { position: absolute; pointer-events: auto; display: flex; flex-direction: column;
-    width: 280px; height: 210px; min-width: 140px; min-height: 116px; resize: both; overflow: hidden;
-    border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
-    background: color-mix(in srgb, var(--card) 90%, transparent); backdrop-filter: blur(10px); }
+    width: 280px; height: 210px; min-width: 140px; min-height: 116px; resize: both; overflow: hidden; }
   .cam-win .cam-head { flex: 0 0 auto; font-size: 9px; letter-spacing: var(--track-label); text-transform: uppercase;
     color: var(--muted-fg); padding: 6px 9px; border-bottom: 1px solid var(--border); cursor: move;
     display: flex; align-items: center; gap: 7px; font-weight: 700; }
   .cam-win .cam-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cam-win .cam-badge { flex: 0 0 auto; font-size: 8px; padding: 1px 5px; border-radius: 999px;
     background: color-mix(in srgb, var(--kc, var(--muted-fg)) 26%, transparent); color: var(--fg); }
-  .cam-win .cam-close { flex: 0 0 auto; cursor: pointer; color: var(--muted-fg); background: none; border: none;
-    font: inherit; font-size: 13px; line-height: 1; padding: 0 2px; }
-  .cam-win .cam-close:hover { color: var(--fg); }
+  .cam-win .cam-close { flex: 0 0 auto; padding: 2px; font-size: 12px; }
   .cam-win .cam-body { flex: 1 1 auto; min-height: 0; background: oklch(0.14 0.015 258); }
   .cam-win canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
   .cam-win.collapsed { height: auto !important; min-height: 0; resize: none; }
   .cam-win.collapsed .cam-body { display: none; }
 
-  #ctxmenu { position: absolute; z-index: 9; min-width: 156px; display: none; padding: 4px;
-    background: color-mix(in srgb, var(--card) 96%, transparent); border: 1px solid var(--border);
-    border-radius: var(--radius); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); }
-  #ctxmenu button { display: block; width: 100%; text-align: left; font: inherit; font-size: 12px;
-    color: var(--fg); background: none; border: none; border-radius: var(--radius-sm); padding: 6px 10px; cursor: pointer; }
-  #ctxmenu button:hover { background: color-mix(in srgb, var(--primary) 16%, transparent); }
+  #ctxmenu { position: absolute; z-index: 9; min-width: 156px; display: none; padding: 4px; }
+  #ctxmenu button { display: block; width: 100%; text-align: left; padding: 7px 10px; }
   #marker-coords { position: absolute; bottom: 68px; right: 16px; z-index: 4; display: none;
-    font-family: var(--mono); font-size: 11px; color: var(--fg); letter-spacing: 0.04em; padding: 7px 11px;
-    background: color-mix(in srgb, var(--card) 88%, transparent); border: 1px solid var(--border);
-    border-radius: var(--radius); box-shadow: var(--shadow-md); backdrop-filter: blur(10px); }
-  #marker-coords .mc-label { display: block; margin-bottom: 3px; color: var(--muted-fg); font-size: 9px;
-    text-transform: uppercase; letter-spacing: var(--track-label); }
+    font-size: 11px; letter-spacing: 0.04em; padding: 7px 11px; }
+  #marker-coords .mc-label { display: block; margin-bottom: 3px; font-family: var(--sans); }
   /* tf tree widget — sits at the bottom of the left column, under the Streams panel */
-  #tf-tree { margin-top: auto; flex: 0 0 auto; display: none; width: 208px; overflow: hidden;
-    background: color-mix(in srgb, var(--card) 88%, transparent); border: 1px solid var(--border);
-    border-radius: var(--radius); box-shadow: var(--shadow-md); backdrop-filter: blur(10px); }
-  #tf-tree .tt-head { display: flex; align-items: center; gap: 6px; padding: 7px 10px; cursor: pointer;
-    color: var(--muted-fg); font-size: 9px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: var(--track-label); user-select: none; }
+  #tf-tree { margin-top: auto; flex: 0 0 auto; display: none; width: 208px; overflow: hidden; }
+  #tf-tree .tt-head { display: flex; align-items: center; gap: 6px; padding: 7px 10px; cursor: pointer; user-select: none; }
   #tf-tree .tt-head:hover { color: var(--fg); }
-  #tf-tree .tt-head::before { content: "▾"; font-size: 8px; transition: transform 0.12s; }
-  #tf-tree.collapsed .tt-head::before { transform: rotate(-90deg); }
+  #tf-tree.collapsed .tt-head .chev { transform: rotate(-90deg); }
   #tf-tree .tt-count { margin-left: auto; font-weight: 600; letter-spacing: 0; }
   #tf-tree-list { max-height: 220px; overflow: auto; padding: 2px 4px 6px;
     border-top: 1px solid var(--border); }
@@ -179,8 +142,7 @@
   /* top-slice: double-ended vertical z clip on the right edge */
   #zslice { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); z-index: 5;
     display: flex; flex-direction: column; align-items: center; gap: 8px; user-select: none; }
-  #zslice-label { font: inherit; font-size: 9px; color: var(--muted-fg); text-transform: uppercase;
-    letter-spacing: var(--track-label); }
+
   #zslice-track { position: relative; width: 10px; height: 42vh; border-radius: 999px;
     background: color-mix(in srgb, var(--card) 88%, transparent); border: 1px solid var(--border);
     box-shadow: var(--shadow-md); backdrop-filter: blur(10px); cursor: pointer; }
@@ -200,35 +162,25 @@
   .row .cust-btn .cb-hover { display: none; }
   .row .cust-btn:hover .cb-idle { display: none; }
   .row .cust-btn:hover .cb-hover { display: inline; }
-  .row .agg-btn { font: inherit; font-size: 13px; line-height: 1; color: var(--muted-fg); background: none; border: none;
-    border-radius: 999px; padding: 1px 5px; cursor: pointer; flex: none; }
-  .row .agg-btn:hover { color: var(--fg); background: var(--secondary); }
+  .row .agg-btn { padding: 2px 5px; font-size: 12px; flex: none; color: var(--muted-fg); }
   #agg-backdrop { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
-    background: color-mix(in srgb, #000 42%, transparent); backdrop-filter: blur(2px); }
-  #agg-modal { width: 320px; max-width: calc(100vw - 32px); padding: 18px; border-radius: var(--radius-lg);
-    background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow-lg); }
+    background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px); }
+  #agg-modal { width: 320px; max-width: calc(100vw - 32px); padding: 18px; box-shadow: var(--shadow-lg); }
   #agg-modal .am-title { font-size: 15px; font-weight: 650; color: var(--fg); }
   #agg-modal .am-sub { font-family: var(--mono); font-size: 11px; color: var(--muted-fg); margin: 2px 0 14px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #agg-modal .am-opt { display: flex; align-items: flex-start; gap: 9px; padding: 8px; cursor: pointer;
     border-radius: var(--radius); border: 1px solid transparent; }
   #agg-modal .am-opt:hover { background: var(--accent); }
-  #agg-modal .am-opt input { margin-top: 2px; cursor: pointer; }
+  #agg-modal .am-opt .box { margin-top: 1px; }
   #agg-modal .am-opt-text { display: flex; flex-direction: column; gap: 1px; }
   #agg-modal .am-opt-text b { font-size: 12.5px; font-weight: 600; color: var(--fg); }
   #agg-modal .am-opt-text em { font-style: normal; font-size: 10.5px; color: var(--muted-fg); }
   #agg-modal .am-subopt { display: flex; align-items: center; gap: 8px; margin: 2px 0 0 34px;
     font-family: var(--mono); font-size: 11px; color: var(--muted-fg); }
-  #agg-modal .am-subopt input { width: 58px; font: inherit; font-size: 11px; text-align: right;
-    padding: 3px 6px; border-radius: var(--radius); border: 1px solid var(--border);
-    background: var(--card); color: var(--fg); }
+  #agg-modal .am-subopt input { width: 58px; font-size: 11px; text-align: right; padding: 3px 6px; }
   #agg-modal .am-subopt input:disabled { opacity: 0.4; }
   #agg-modal .am-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-  #agg-modal .am-actions button { font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
-    border-radius: var(--radius); padding: 7px 15px; border: 1px solid var(--border); background: var(--card); color: var(--fg); }
-  #agg-modal .am-actions button:hover { background: var(--accent); }
-  #agg-modal .am-actions .am-primary { background: var(--info); border-color: var(--info); color: #fff; }
-  #agg-modal .am-actions .am-primary:hover { background: color-mix(in oklch, var(--info) 85%, #000); }
   .agg-prog { display: inline-flex; align-items: center; gap: 8px; margin-right: 4px; }
   .agg-prog .agg-prog-label { font-family: var(--mono); font-size: 10.5px; color: var(--muted-fg);
     white-space: nowrap; min-width: 74px; text-align: right; }
@@ -238,42 +190,35 @@
     background: var(--info); transition: width .18s ease; }
   .agg-prog .agg-prog-fill.indeterminate { width: 40% !important; animation: aggIndet 1.1s ease-in-out infinite; }
   @keyframes aggIndet { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
-  .agg-prog .agg-prog-cancel { font: inherit; font-size: 11px; line-height: 1; cursor: pointer; color: var(--muted-fg);
-    background: none; border: 1px solid var(--border); border-radius: 999px; width: 18px; height: 18px; padding: 0; }
-  .agg-prog .agg-prog-cancel:hover { color: var(--fg); background: var(--accent); }
+  .agg-prog .agg-prog-cancel { width: 20px; height: 20px; font-size: 11px; }
   #tf-warn { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
-    background: color-mix(in srgb, #000 55%, transparent); backdrop-filter: blur(3px); cursor: pointer; }
+    background: color-mix(in srgb, var(--bg) 60%, transparent); backdrop-filter: blur(3px); cursor: pointer; }
   #tf-warn-card { width: 560px; max-width: calc(100vw - 40px); max-height: calc(100vh - 60px); overflow: auto;
-    padding: 20px 22px; border-radius: var(--radius-lg); background: var(--card); border: 1px solid var(--border);
-    box-shadow: var(--shadow-lg); cursor: default; }
+    padding: 20px 22px; box-shadow: var(--shadow-lg); cursor: default; }
   #tf-warn-card .tw-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-  #tf-warn-card .tw-icon { font-size: 20px; line-height: 1; color: var(--warn, #e0a53a); }
+  #tf-warn-card .tw-icon { display: inline-flex; font-size: 20px; color: var(--warn); }
   #tf-warn-card .tw-title { font-size: 15px; font-weight: 650; color: var(--fg); }
   #tf-warn-card .tw-body { font-size: 12.5px; line-height: 1.5; color: var(--fg); }
   #tf-warn-card .tw-body p { margin: 0 0 10px; }
   #tf-warn-card .tw-list { margin: 0 0 4px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; }
   #tf-warn-card .tw-list li { padding: 8px 10px; border-radius: var(--radius); border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--warn, #e0a53a) 9%, transparent); }
+    background: color-mix(in srgb, var(--warn) 9%, transparent); }
   #tf-warn-card .tw-list b { font-family: var(--mono); font-size: 12px; }
   #tf-warn-card .tw-list em { font-style: normal; color: var(--muted-fg); display: block; margin-top: 2px; font-size: 11.5px; }
-  #tf-warn-card .tw-tree-label { margin: 16px 0 6px; font-size: 9.5px; text-transform: uppercase;
-    letter-spacing: var(--track-label); color: var(--muted-fg); font-family: var(--mono); }
+  #tf-warn-card .tw-tree-label { margin: 16px 0 6px; }
   #tf-warn-card .tw-tree { font-family: var(--mono); font-size: 12px; line-height: 1.55; white-space: pre;
     padding: 10px 12px; border-radius: var(--radius); background: color-mix(in srgb, var(--muted-fg) 8%, transparent);
     border: 1px solid var(--border); overflow-x: auto; }
-  #tf-warn-card .tw-tree .tw-bad { color: #e5484d; font-weight: 700; }
+  #tf-warn-card .tw-tree .tw-bad { color: var(--danger); font-weight: 700; }
   #tf-warn-card .tw-tree .tw-bad::after { content: "  ← can't place this"; font-weight: 600; opacity: 0.85; }
   #tf-warn-card .tw-foot { margin-top: 14px; text-align: center; font-size: 10.5px; color: var(--muted-fg);
     font-family: var(--mono); }
   #fb-backdrop { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center;
-    background: color-mix(in srgb, #000 48%, transparent); backdrop-filter: blur(2px); }
+    background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px); }
   #fb-card { width: 620px; max-width: calc(100vw - 40px); height: 520px; max-height: calc(100vh - 60px);
-    display: flex; flex-direction: column; padding: 16px 18px; border-radius: var(--radius-lg);
-    background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow-lg); }
+    display: flex; flex-direction: column; padding: 16px 18px; box-shadow: var(--shadow-lg); }
   #fb-card .fb-title { font-size: 15px; font-weight: 650; color: var(--fg); margin-bottom: 10px; }
-  #fb-path { width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 12px;
-    padding: 7px 9px; border-radius: var(--radius); border: 1px solid var(--border);
-    background: var(--card); color: var(--fg); }
+  #fb-path { box-sizing: border-box; font-size: 12px; padding: 7px 9px; }
   #fb-list { flex: 1; overflow-y: auto; margin-top: 10px; border: 1px solid var(--border);
     border-radius: var(--radius); background: color-mix(in srgb, var(--muted-fg) 6%, transparent); }
   #fb-list .fb-row { display: flex; align-items: center; gap: 9px; padding: 7px 11px; cursor: pointer;
@@ -281,19 +226,13 @@
   #fb-list .fb-row:last-child { border-bottom: none; }
   #fb-list .fb-row:hover, #fb-list .fb-row.sel { background: var(--accent); }
   #fb-card .fb-hint { font-size: 11px; color: var(--muted-fg); margin-top: 8px; font-family: var(--mono); }
-  #fb-list .fb-icon { flex: none; width: 14px; text-align: center; opacity: 0.75; }
+  #fb-list .fb-icon { flex: none; display: inline-flex; font-size: 13px; color: var(--muted-fg); }
   #fb-list .fb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #fb-list .fb-size { flex: none; font-size: 11px; color: var(--muted-fg); }
   #fb-list .fb-empty { padding: 14px; font-size: 12px; color: var(--muted-fg); text-align: center; }
   #fb-card .fb-actions { display: flex; justify-content: flex-end; margin-top: 14px; }
-  #fb-card .fb-actions button { font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
-    border-radius: var(--radius); padding: 7px 15px; border: 1px solid var(--border); background: var(--card); color: var(--fg); }
-  #fb-card .fb-actions button:hover { background: var(--accent); }
-  #cust-panel { position: absolute; z-index: 9; display: none; padding: 9px; min-width: 158px;
-    background: color-mix(in srgb, var(--card) 96%, transparent); border: 1px solid var(--border);
-    border-radius: var(--radius); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); }
-  #cust-panel .cp-title { display: block; margin-bottom: 6px; color: var(--muted-fg); font-size: 9px;
-    text-transform: uppercase; letter-spacing: var(--track-label); font-family: var(--mono);
+  #cust-panel { position: absolute; z-index: 9; display: none; padding: 9px; min-width: 158px; box-shadow: var(--shadow-lg); }
+  #cust-panel .cp-title { display: block; margin-bottom: 6px;
     max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #cust-panel .cp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 3px 1px; font-size: 11px; color: var(--fg); }
   #cust-panel .cp-row > span { color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.05em; font-size: 9px; white-space: nowrap; }
@@ -303,11 +242,11 @@
     border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
     background: linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%); }
   #cust-panel input.cp-hue::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 8px; height: 16px;
-    border-radius: 2px; background: var(--fg); border: 1px solid #000; box-shadow: 0 0 0 1px rgba(255,255,255,0.4); }
-  #cust-panel input.cp-hue::-moz-range-thumb { width: 8px; height: 16px; border-radius: 2px; background: var(--fg); border: 1px solid #000; }
-  #cust-panel select { font: inherit; font-size: 11px; padding: 2px 4px; }
-  #cust-panel .cp-num { width: 58px; font: inherit; font-size: 11px; padding: 2px 4px; color: var(--fg);
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    border-radius: 2px; background: var(--fg); border: 1px solid var(--bg); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 40%, transparent); }
+  #cust-panel input.cp-hue::-moz-range-thumb { width: 8px; height: 16px; border-radius: 2px; background: var(--fg); border: 1px solid var(--bg); }
+  #cust-panel .dim-select { width: auto; font-size: 11px; padding: 2px 24px 2px 6px; background-position: right 11px center, right 6px center; }
+  #cust-panel .cp-num { width: 58px; font-size: 11px; padding: 2px 4px; border-radius: var(--radius-sm); }
+  #cust-panel .dim-check .box { width: 15px; height: 15px; }
   #cust-panel .cp-sep { margin: 7px 1px 3px; padding-top: 6px; border-top: 1px solid var(--border);
     color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.05em; font-size: 8.5px; font-weight: 700; }
 </style>
@@ -315,7 +254,9 @@
 { "imports": { "three": "https://esm.sh/three@0.160.0" } }
 </script>
 </head>
-<body class="science dark">
+<body class="science">
+<script src="dim-theme.js"></script>
+<script type="module" src="dim-icons.js"></script>
 
 <div id="scene"></div>
 
@@ -331,24 +272,24 @@
   <span class="agg-prog" id="agg-prog" style="display:none">
     <span class="agg-prog-label" id="agg-prog-label">aggregating…</span>
     <span class="agg-prog-track"><span class="agg-prog-fill" id="agg-prog-fill"></span></span>
-    <button class="agg-prog-cancel" id="agg-prog-cancel" title="Cancel aggregation">✕</button>
+    <button class="agg-prog-cancel dim-btn round" id="agg-prog-cancel" title="Cancel aggregation"><i data-dim-icon="close"></i></button>
   </span>
-  <button class="btn" id="top-view" title="Bird's-eye: look straight down on the whole map">Top-down</button>
-  <button class="btn" id="fit-top" title="Auto-fit the camera to frame the whole scene">Fit view</button>
-  <button class="btn" id="browse-top">Open…</button>
-  <span class="pill" id="pill"><span class="dot" id="dot"></span><span id="stat">idle</span></span>
+  <button class="dim-btn sm" id="top-view" title="Bird's-eye: look straight down on the whole map">Top-down</button>
+  <button class="dim-btn sm" id="fit-top" title="Auto-fit the camera to frame the whole scene">Fit view</button>
+  <button class="dim-btn sm" id="browse-top">Open…</button>
+  <span class="dim-badge dim-mono" id="pill"><span class="dot" id="dot"></span><span id="stat">idle</span></span>
 </div>
 
 <div id="left-stack">
-  <div class="panel" id="panel" style="display:none">
+  <div class="panel dim-panel glass" id="panel" style="display:none">
     <div class="panel-head">
-      <h2 class="toggle" id="streams-toggle" title="Click to collapse/expand">Streams</h2>
-      <button class="mini-btn" id="toggle-all" title="Show or hide all streams at once">Hide all</button>
+      <h2 class="toggle dim-label" id="streams-toggle" title="Click to collapse/expand"><i class="chev" data-dim-icon="chevron-down"></i>Streams</h2>
+      <button class="mini-btn dim-btn sm ghost" id="toggle-all" title="Show or hide all streams at once">Hide all</button>
     </div>
     <div id="stream-list"><div class="empty">none yet</div></div>
   </div>
-  <div id="tf-tree" class="collapsed">
-    <div class="tt-head" id="tf-tree-head">TF tree<span class="tt-count" id="tf-tree-count"></span></div>
+  <div id="tf-tree" class="collapsed dim-panel glass">
+    <div class="tt-head dim-label" id="tf-tree-head"><i class="chev" data-dim-icon="chevron-down"></i>TF tree<span class="tt-count" id="tf-tree-count"></span></div>
     <div id="tf-tree-list"></div>
   </div>
 </div>
@@ -356,7 +297,7 @@
 <div id="cam-layer"></div>
 
 <div id="zslice" title="Top slice: drag the handles to clip everything above/below a height (cut away a roof)">
-  <span id="zslice-label">Z slice</span>
+  <span id="zslice-label" class="dim-label">Z slice</span>
   <div id="zslice-track">
     <div id="zslice-fill"></div>
     <div id="zslice-thumb-top" class="zslice-thumb"></div>
@@ -367,73 +308,73 @@
 
 <div id="help">WASD MOVE · Q/E DOWN/UP · DRAG LOOK · SCROLL DOLLY · RIGHT-DRAG PAN · RIGHT-CLICK MARKER · DBLCLICK RECENTER<span id="campos"></span></div>
 
-<div id="ctxmenu">
-  <button id="ctx-move">Move this marker</button>
-  <button id="ctx-place">Place marker here</button>
-  <button id="ctx-clear">Clear markers</button>
+<div id="ctxmenu" class="dim-panel glass">
+  <button class="dim-btn sm ghost" id="ctx-move">Move this marker</button>
+  <button class="dim-btn sm ghost" id="ctx-place">Place marker here</button>
+  <button class="dim-btn sm ghost" id="ctx-clear">Clear markers</button>
 </div>
-<div id="marker-coords"><span class="mc-label">Marker · floor (m)</span><span id="marker-coords-val"></span></div>
-<div id="cust-panel">
-  <span class="cp-title" id="cp-title"></span>
+<div id="marker-coords" class="dim-panel glass dim-mono"><span class="mc-label dim-label">Marker · floor (m)</span><span id="marker-coords-val"></span></div>
+<div id="cust-panel" class="dim-panel glass">
+  <span class="cp-title dim-label dim-mono" id="cp-title"></span>
   <div class="cp-row"><span>Start</span><input type="range" min="0" max="359" id="cp-start" class="cp-hue"></div>
   <div class="cp-row"><span>Mid</span><input type="range" min="0" max="359" id="cp-mid" class="cp-hue"></div>
   <div class="cp-row"><span>End</span><input type="range" min="0" max="359" id="cp-end" class="cp-hue"></div>
-  <div class="cp-row"><span>Axis</span><select id="cp-axis"><option value="2">z</option><option value="0">x</option><option value="1">y</option></select></div>
-  <div class="cp-row" id="cp-accum-row"><span>Accumulate</span><select id="cp-accum"><option value="latest">latest</option><option value="all">accum</option><option value="2">2s</option><option value="5">5s</option><option value="10">10s</option><option value="30">30s</option></select></div>
-  <div class="cp-row"><span>Voxels</span><input type="checkbox" id="cp-voxel"></div>
-  <div class="cp-row"><span>Size</span><select id="cp-voxel-size"><option value="0.05">5&nbsp;cm</option><option value="0.1" selected>10&nbsp;cm</option><option value="0.2">20&nbsp;cm</option><option value="0.4">40&nbsp;cm</option></select></div>
+  <div class="cp-row"><span>Axis</span><select class="dim-select" id="cp-axis"><option value="2">z</option><option value="0">x</option><option value="1">y</option></select></div>
+  <div class="cp-row" id="cp-accum-row"><span>Accumulate</span><select class="dim-select" id="cp-accum"><option value="latest">latest</option><option value="all">accum</option><option value="2">2s</option><option value="5">5s</option><option value="10">10s</option><option value="30">30s</option></select></div>
+  <div class="cp-row"><span>Voxels</span><label class="dim-check"><input type="checkbox" id="cp-voxel"><span class="box"></span></label></div>
+  <div class="cp-row"><span>Size</span><select class="dim-select" id="cp-voxel-size"><option value="0.05">5&nbsp;cm</option><option value="0.1" selected>10&nbsp;cm</option><option value="0.2">20&nbsp;cm</option><option value="0.4">40&nbsp;cm</option></select></div>
   <div class="cp-sep">Filter &amp; downsample</div>
-  <div class="cp-row"><span>De-noise</span><input type="checkbox" id="cp-denoise"></div>
-  <div class="cp-row"><span>· radius (cm)</span><input type="number" id="cp-denoise-cell" class="cp-num" min="1" step="1"></div>
-  <div class="cp-row"><span>· min pts</span><input type="number" id="cp-denoise-min" class="cp-num" min="1" step="1"></div>
+  <div class="cp-row"><span>De-noise</span><label class="dim-check"><input type="checkbox" id="cp-denoise"><span class="box"></span></label></div>
+  <div class="cp-row"><span>· radius (cm)</span><input type="number" id="cp-denoise-cell" class="cp-num dim-input dim-mono" min="1" step="1"></div>
+  <div class="cp-row"><span>· min pts</span><input type="number" id="cp-denoise-min" class="cp-num dim-input dim-mono" min="1" step="1"></div>
   <div class="cp-hint" id="cp-defer-hint" style="display:none">de-noise applies when you close (large cloud)</div>
-  <div class="cp-row"><span>Downsample</span><select id="cp-down"><option value="1">none</option><option value="2">2&times;</option><option value="4">4&times;</option><option value="8">8&times;</option><option value="16">16&times;</option></select></div>
-  <div class="cp-row"><span>Max range</span><select id="cp-range"><option value="0">none</option><option value="3">3&nbsp;m</option><option value="5">5&nbsp;m</option><option value="10">10&nbsp;m</option><option value="20">20&nbsp;m</option><option value="50">50&nbsp;m</option></select></div>
-  <div class="cp-row"><span>Z min</span><input type="number" id="cp-zmin" class="cp-num" step="0.1" placeholder="—"></div>
-  <div class="cp-row"><span>Z max</span><input type="number" id="cp-zmax" class="cp-num" step="0.1" placeholder="—"></div>
+  <div class="cp-row"><span>Downsample</span><select class="dim-select" id="cp-down"><option value="1">none</option><option value="2">2&times;</option><option value="4">4&times;</option><option value="8">8&times;</option><option value="16">16&times;</option></select></div>
+  <div class="cp-row"><span>Max range</span><select class="dim-select" id="cp-range"><option value="0">none</option><option value="3">3&nbsp;m</option><option value="5">5&nbsp;m</option><option value="10">10&nbsp;m</option><option value="20">20&nbsp;m</option><option value="50">50&nbsp;m</option></select></div>
+  <div class="cp-row"><span>Z min</span><input type="number" id="cp-zmin" class="cp-num dim-input dim-mono" step="0.1" placeholder="—"></div>
+  <div class="cp-row"><span>Z max</span><input type="number" id="cp-zmax" class="cp-num dim-input dim-mono" step="0.1" placeholder="—"></div>
 </div>
 
 <div id="agg-backdrop" style="display:none">
-  <div id="agg-modal" role="dialog" aria-modal="true">
+  <div id="agg-modal" class="dim-panel" role="dialog" aria-modal="true">
     <div class="am-title">Aggregate map</div>
     <div class="am-sub" id="agg-modal-stream"></div>
-    <label class="am-opt"><input type="checkbox" id="agg-carve" checked>
+    <label class="am-opt dim-check"><input type="checkbox" id="agg-carve" checked><span class="box"></span>
       <span class="am-opt-text"><b>Column carving</b><em>remove floaters + everything above head height</em></span></label>
-    <div class="am-subopt">carve above <input type="number" id="agg-carve-height" value="2.13" min="0" step="0.05"> m from floor</div>
-    <label class="am-opt"><input type="checkbox" id="agg-outlier" checked>
+    <div class="am-subopt">carve above <input class="dim-input dim-mono" type="number" id="agg-carve-height" value="2.13" min="0" step="0.05"> m from floor</div>
+    <label class="am-opt dim-check"><input type="checkbox" id="agg-outlier" checked><span class="box"></span>
       <span class="am-opt-text"><b>Outlier removal</b><em>drop isolated speckle points</em></span></label>
     <div class="am-actions">
-      <button id="agg-cancel-modal">Cancel</button>
-      <button id="agg-start" class="am-primary">Start</button>
+      <button class="dim-btn sm" id="agg-cancel-modal">Cancel</button>
+      <button id="agg-start" class="dim-btn sm primary">Start</button>
     </div>
   </div>
 </div>
 
 <div id="tf-warn" style="display:none">
-  <div id="tf-warn-card">
-    <div class="tw-head"><span class="tw-icon">&#9888;</span><span class="tw-title">Some data can't be placed on the map</span></div>
+  <div id="tf-warn-card" class="dim-panel">
+    <div class="tw-head"><span class="tw-icon"><i data-dim-icon="warn"></i></span><span class="tw-title">Some data can't be placed on the map</span></div>
     <div class="tw-body" id="tf-warn-body"></div>
-    <div class="tw-tree-label">transform tree(s) in this recording</div>
+    <div class="tw-tree-label dim-label">transform tree(s) in this recording</div>
     <div class="tw-tree" id="tf-warn-tree"></div>
     <div class="tw-foot">click anywhere to dismiss</div>
   </div>
 </div>
 
 <div id="fb-backdrop">
-  <div id="fb-card">
+  <div id="fb-card" class="dim-panel">
     <div class="fb-title">Open a recording</div>
-    <input id="fb-path" spellcheck="false" autocomplete="off" />
+    <input id="fb-path" class="dim-input dim-mono" spellcheck="false" autocomplete="off" />
     <div id="fb-list"></div>
     <div class="fb-hint">tab completes · ↑↓ picks · enter opens</div>
-    <div class="fb-actions"><button id="fb-cancel">Cancel</button></div>
+    <div class="fb-actions"><button class="dim-btn sm" id="fb-cancel">Cancel</button></div>
   </div>
 </div>
 
-<div class="transport hidden" id="transport">
-  <button class="playbtn" id="playbtn" title="Play/Pause">▶</button>
+<div class="transport hidden dim-panel glass" id="transport">
+  <button class="playbtn dim-btn round" id="playbtn" title="Play/Pause"><i data-dim-icon="play"></i></button>
   <span class="clock" id="clock">0.0 / 0.0s</span>
-  <input type="range" id="scrub" min="0" max="1000" value="0" step="1" />
-  <select id="speed" title="Playback speed">
+  <input class="dim-range" type="range" id="scrub" min="0" max="1000" value="0" step="1" />
+  <select class="dim-select dim-mono" id="speed" title="Playback speed">
     <option value="0.25">0.25×</option>
     <option value="0.5">0.5×</option>
     <option value="1" selected>1×</option>
@@ -448,13 +389,13 @@
   <div class="drop" id="drop">
     <h1>Drop a recording here</h1>
     <p>A dimos <code>.db</code> / <code>.mcap</code> recording or a <code>.pc2.lcm</code> map — or use the button below to browse.</p>
-    <button class="btn primary" id="browse">Browse for a recording…</button>
+    <button class="dim-btn primary" id="browse">Browse for a recording…</button>
     <div class="reclist" id="recent-opened-wrap" style="display:none">
-      <h2>Recently opened</h2>
+      <h2 class="dim-label">Recently opened</h2>
       <div id="recent-opened"></div>
     </div>
     <div class="reclist">
-      <h2>All recordings</h2>
+      <h2 class="dim-label">All recordings</h2>
       <div id="recordings"><div class="empty">scanning…</div></div>
     </div>
   </div>
@@ -463,6 +404,7 @@
 <script type="module">
 import * as THREE from "three"
 import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.5.0/frontend.js"
+import { dimIcon } from "./dim-icons.js"
 
 // ── cloud coloring: a start→end color gradient mapped along one axis ──
 const clamp01 = (value) => Math.min(1, Math.max(0, value))
@@ -973,19 +915,37 @@ function applyTheme() {
   if (!sun) { sun = new THREE.DirectionalLight(0xffffff, 0.85); sun.position.set(6, 4, 12); scene.add(sun) }
 }
 applyTheme()
+window.addEventListener("dim-theme", applyTheme)
+// theme.css token -> "#rrggbb" (THREE.Color can't parse oklch/color-mix, so let the browser resolve and paint one pixel)
+const tokenProbe = document.body.appendChild(Object.assign(document.createElement("span"), { hidden: true }))
+const tokenPixel = Object.assign(document.createElement("canvas"), { width: 1, height: 1 }).getContext("2d", { willReadFrequently: true })
+function cssColor(token) {
+  tokenProbe.style.color = `var(${token})`
+  tokenPixel.clearRect(0, 0, 1, 1)
+  tokenPixel.fillStyle = getComputedStyle(tokenProbe).color
+  tokenPixel.fillRect(0, 0, 1, 1)
+  const [r, g, b] = tokenPixel.getImageData(0, 0, 1, 1).data
+  return (r << 16) | (g << 8) | b
+}
+// recolor every axis rod in the scene from --axis-x/y/z when light/dark flips
+window.addEventListener("dim-theme", () => {
+  scene.traverse((object) => { const token = object.material?.userData?.axisToken; if (token) { object.material.color.set(cssColor(token)) } })
+})
 // Solid cylinder axes instead of AxesHelper: 1px lines lying in the grid plane
 // z-fight with the GridHelper; real thickness (and a tiny z lift) avoids that.
 function makeAxes(length, radius) {
   const axesGroup = new THREE.Group()
   const axisSpecs = [
-    { color: 0xef4444, dir: new THREE.Vector3(1, 0, 0) },
-    { color: 0x22c55e, dir: new THREE.Vector3(0, 1, 0) },
-    { color: 0x3b82f6, dir: new THREE.Vector3(0, 0, 1) },
+    { token: "--axis-x", dir: new THREE.Vector3(1, 0, 0) },
+    { token: "--axis-y", dir: new THREE.Vector3(0, 1, 0) },
+    { token: "--axis-z", dir: new THREE.Vector3(0, 0, 1) },
   ]
-  for (const { color, dir } of axisSpecs) {
+  for (const { token, dir } of axisSpecs) {
+    const material = new THREE.MeshBasicMaterial({ color: cssColor(token) })
+    material.userData.axisToken = token
     const rod = new THREE.Mesh(
       new THREE.CylinderGeometry(radius, radius, length, 12),
-      new THREE.MeshBasicMaterial({ color }))
+      material)
     rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir)
     rod.position.copy(dir).multiplyScalar(length / 2)
     axesGroup.add(rod)
@@ -1864,9 +1824,9 @@ function ensureImageWindow(name) {
   if (win) { return win }
   const entry = known.get(name)
   const el = document.createElement("div")
-  el.className = "cam-win"
+  el.className = "cam-win dim-panel glass"
   el.innerHTML = '<div class="cam-head"><span class="cam-title"></span><span class="cam-badge"></span>' +
-    '<button class="cam-close" title="Hide">&times;</button></div><div class="cam-body"><canvas></canvas></div>'
+    '<button class="cam-close dim-btn ghost icon" title="Hide">' + dimIcon("close") + '</button></div><div class="cam-body"><canvas></canvas></div>'
   el.querySelector(".cam-title").textContent = name.split("#")[0]
   const canvas = el.querySelector("canvas")
   // Restored geometry is clamped to the current viewport, and a non-positive saved size is
@@ -2115,7 +2075,7 @@ function refreshStreams() {
     // accumulation; odom: just accumulation). Other kinds show a plain kind tag.
     let control
     if (entry.kind === "cloud") {
-      const aggBtn = name.split("#")[0].endsWith("_aggregated") ? "" : `<button class="agg-btn" data-agg="${encodeURIComponent(name)}" title="More">⋯</button>`
+      const aggBtn = name.split("#")[0].endsWith("_aggregated") ? "" : `<button class="agg-btn dim-btn ghost icon" data-agg="${encodeURIComponent(name)}" title="More">${dimIcon("menu")}</button>`
       control = aggBtn +
         `<button class="cust-btn" data-cust="${encodeURIComponent(name)}">` +
         `<span class="cb-idle">${entry.voxel ? "voxels" : "lidar"}</span><span class="cb-hover">customize</span></button>`
@@ -2125,7 +2085,7 @@ function refreshStreams() {
     } else {
       control = `<span class="tag kc-${entry.kind}">${entry.kind}</span>`
     }
-    return `<div class="row"><label><input type="checkbox" data-s="${encodeURIComponent(name)}" ${entry.on ? "checked" : ""}>` +
+    return `<div class="row"><label class="dim-check"><input type="checkbox" data-s="${encodeURIComponent(name)}" ${entry.on ? "checked" : ""}><span class="box"></span>` +
       `<span class="nm">${name.split("#")[0].replace(/[&<>]/g, "")}</span></label>${control}</div>`
   }).join("")
   if (list.dataset.sig !== rows) { list.dataset.sig = rows; list.innerHTML = rows }
@@ -2214,7 +2174,7 @@ function formatClock() {
   clock.textContent = `${elapsed.toFixed(1)} / ${duration.toFixed(1)}s`
 }
 function renderTransport() {
-  playBtn.textContent = timeline.playing ? "❚❚" : "▶"
+  playBtn.innerHTML = dimIcon(timeline.playing ? "pause" : "play")
   if (!scrubbing) {
     const duration = timeline.t1 - timeline.t0
     scrub.value = duration > 0 ? String(Math.round(((timeline.t - timeline.t0) / duration) * 1000)) : "0"
@@ -2344,7 +2304,7 @@ function fbRenderList() {
   }
   if (fbSelected >= fbShown.length) { fbSelected = fbShown.length - 1 }
   const rows = fbShown.map((entry, index) => {
-    const icon = entry.isParent ? "↰" : (entry.isDir ? "▸" : "▪")
+    const icon = dimIcon(entry.isParent ? "arrow-up" : (entry.isDir ? "folder" : "file"))
     const size = entry.isDir ? "" : `<span class="fb-size">${fmtSize(entry.size)}</span>`
     return `<div class="fb-row${index === fbSelected ? " sel" : ""}" data-index="${index}"><span class="fb-icon">${icon}</span><span class="fb-name">${entry.name.replace(/[&<>]/g, "")}</span>${size}</div>`
   })
@@ -2472,11 +2432,11 @@ window.addEventListener("drop", (event) => {
 
 // ── status pill ──
 function setStatus(state, detail) {
-  if (state === "loading") { pill.classList.remove("on"); statEl.textContent = detail || "loading…" }
-  else if (state === "playing") { pill.classList.add("on"); statEl.textContent = `playing · ${known.size} streams` }
-  else if (state === "ready") { pill.classList.add("on"); statEl.textContent = `${known.size} streams` }
-  else if (state === "error") { pill.classList.remove("on"); statEl.textContent = detail || "error" }
-  else { pill.classList.remove("on"); statEl.textContent = "idle" }
+  if (state === "loading") { pill.classList.remove("info"); statEl.textContent = detail || "loading…" }
+  else if (state === "playing") { pill.classList.add("info"); statEl.textContent = `playing · ${known.size} streams` }
+  else if (state === "ready") { pill.classList.add("info"); statEl.textContent = `${known.size} streams` }
+  else if (state === "error") { pill.classList.remove("info"); statEl.textContent = detail || "error" }
+  else { pill.classList.remove("info"); statEl.textContent = "idle" }
 }
 
 // ── app bus ──
